@@ -112,14 +112,24 @@ def waitfor1face(faces): #limiting to 1 face makes it infinite loop for some rea
         numfaces = int(faces.size/4)
     return
 
-def getfacecentre(faces,Debug): #gets centre of the face and returns it as an x and y list
+def getfacecentre(faces,debug): #gets centre of the face and returns it as an x and y list
     centres = [float(faces[0][0] + faces[0][2]/2), float(faces[0][1]+ faces[0][3]/2)] #gets x and y of face centre
-    if Debug:
+    if debug:
         print("Face array:\n", faces) #prints the contents of the faces arrays
         #print("Number faces:\n", numfaces) #not a thing anymore
         print("Face centre:\n", centres)
     return centres
 
+def geteyecentres(eyes, debug)
+    centres = []
+
+    return centres
+
+
+def geteyedistance(eyecentres, dist, debug)
+    #FOV 60 degrees (assume both directions but test) #https://support.logitech.com/en_us/article/17556
+
+    return eyedist
     
 
 
@@ -143,6 +153,8 @@ while 1:
         
         if Uenable: #if ultrasonics are on
             dist = distance() #does the ultrasonic distance measurement
+        elif Uenable == False:
+            dist = -1 #-1 used to indicate ultrasonic sensor is not on or can fill with a set value in cm can still work
 
         facecentre = getfacecentre(faces,True) #debug prints out face info
         
@@ -254,7 +266,7 @@ while 1:
 
         fps.update() #updates the fps object each time the detection runs
 
-    except: #except if it throws the face error
+    except: #except if it throws the face error and print that
         cv2.imshow('img',img) #img reference is 0,0 in top left
         k = cv2.waitKey(30) & 0xff
         if k == 27: #press escape key to escape
