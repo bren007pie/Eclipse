@@ -1,4 +1,7 @@
-#sourced from: https://www.instructables.com/id/Face-and-Eye-Detection-With-Raspberry-Pi-Zero-and-/
+#Purpose: This is the main code for head tracking for the Eclipse Blocking System.
+#Author: Brendan Fallon 
+#Date: Dec 2018
+
 
 #if getting an error run:
 #sudo modprobe bcm2835-v4l2
@@ -14,6 +17,7 @@ import RPi.GPIO as GPIO
 import time
 from threading import Timer
 import math as m
+import HeadTrackingFunctions #my file that has all the function (needs to be in the same file location as this)
 
 #global variable setup
 #Sets up Camera and OpenCV and FPS
@@ -222,7 +226,7 @@ def deleteeyesbelowcentre(numeyes,eyecentres,facecentre,eyes):
 #program start
 
 
-ultrasonicsetup(True,0) #True if ultrasonic is hooked up, false if otherwise
+ultrasonicsetup(False,0) #True if ultrasonic is hooked up, false if otherwise
 fps = FPS().start() #defines the FPS object
 testIRled()
 #debug = (Distance, eye array,etc)
@@ -360,6 +364,9 @@ print("[INFO] approx FPS: {:.2f}".format(fps.fps()))
 #cleans up
 cap.release()
 cv2.destroyAllWindows()
+
+###Notes
+#sourced from: https://www.instructables.com/id/Face-and-Eye-Detection-With-Raspberry-Pi-Zero-and-/
 
 #if getting an error run:
 #sudo modprobe bcm2835-v4l2
