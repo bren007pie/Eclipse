@@ -17,7 +17,7 @@ import RPi.GPIO as GPIO
 import time
 from threading import Timer
 import math as m
-import HeadTrackingFunctions #my file that has all the function (needs to be in the same file location as this)
+#doesn't make much sense to have a headtracking functions file as things are mostly setup as global variables and such
 
 #global variable setup
 #Sets up Camera and OpenCV and FPS
@@ -48,25 +48,9 @@ framebufferlen = 5 #maybe can just make this bigger and not take the average but
 areathreshold = 5 #radius in pixels of the acceptable into accept
 
 #Objects
-class Watchdog: #watchdog timer to stop the program if ultrasonics are not hooked up
-    def __init__(self, timeout, userHandler=None):  # timeout in seconds
-        self.timeout = timeout
-        self.handler = userHandler if userHandler is not None else self.defaultHandler
-        self.timer = Timer(self.timeout, self.handler)
-        self.timer.start()
+#watchdog timer removed 
 
-    def reset(self):
-        self.timer.cancel()
-        self.timer = Timer(self.timeout, self.handler)
-        self.timer.start()
-
-    def stop(self):
-        self.timer.cancel()
-
-    def defaultHandler(self):
-        raise self
-
-#Setup Functions
+#Ultrasonic Functions - need to be in code for 
 
 def ultrasonicsetup(enable,manualdistance): #setups up ultrasonic range finder, if enable is false it doesn't run
     global Uenable, GPIO_TRIGGER, GPIO_ECHO, manualdist  #setups a global variables. Uenable that stops all ultrasonic stuff
@@ -81,14 +65,6 @@ def ultrasonicsetup(enable,manualdistance): #setups up ultrasonic range finder, 
         #set GPIO direction (IN / OUT)
         GPIO.setup(GPIO_TRIGGER, GPIO.OUT)
         GPIO.setup(GPIO_ECHO, GPIO.IN)
-##        try:
-##            watchdog = Watchdog(5) #watchdog timer waits 2 seconds
-##            distance()
-##            print("Ultrasonic Sensor is hooked up!")
-##        except:
-##            print("Waited too long, No Ultrasonic sensor detected")
-##            Uenable = False #disables all ultrasonic stuff
-##        watchdog.stop()
     return
 
 def distance(debug): #gets distance from the ultrasonic range finder
@@ -263,9 +239,6 @@ while 1:
         
 
 
-##
-##        #finding the number of eyes, should also just be a function
-##        print("Eye array: \n", eyes)
 ##        
 ##
 ##        #print("Framebuff:\n", framebuffer )
