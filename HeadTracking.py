@@ -193,7 +193,7 @@ def geteyedistance(eyecentres, dist, debug):
 #program start
 
 
-ultrasonicsetup(False,0) #True if ultrasonic is hooked up, false if otherwise
+ultrasonicsetup(False,40) #True if ultrasonic is hooked up, false if otherwise
 fps = FPS().start() #defines the FPS object
 testIRled()
 #debug = (Distance, eye array,etc)
