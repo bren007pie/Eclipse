@@ -17,10 +17,14 @@ import sys
 import cv2
 import os
 import RPi.GPIO as GPIO
+import subprocess
 
 ##THIS VERSION OF THE INTEGRATED CODE HAS HEAD TRACKING IN A SEPARATE THREAD, FOR A TOTAL OF 3 THREADS##
 
 #TODO Clean everything up, don't do try-excepts for no reason, finish multithreading
+
+
+subprocess.call("./pre_eclipse.sh", shell=True)
 
 #change system path to be able to import sunlight sensor driver
 #sys.path.append('./SunIOT/SDL_Pi_SI1145');
