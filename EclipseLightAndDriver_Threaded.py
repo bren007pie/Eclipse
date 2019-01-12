@@ -126,7 +126,7 @@ class HeadTrackingThreaded:
 
             dist = self.distance(False) #does the ultrasonic distance measurement, True is the debug
               
-
+            #TODO try to make for only one face  
             for (x,y,w,h) in faces: #if there are no faces this doesn't run
                 cv2.rectangle(img,(x,y),(x+w,y+h),(255,0,0),1) #draws the rectangle around the corners in blue to the image object
                 cv2.circle(img, (int(x+w/2),int(y+h/2)), 3, (255,0,0),2) #draws a blue circle of radius 3 in the centre of the face to the image object. Pixel reference need to be an integer
@@ -136,7 +136,8 @@ class HeadTrackingThreaded:
                 facecentre = self.getfacecentre(faces,False) #debug prints out face info
                 
                 eyes = self.eye_cascade.detectMultiScale(roi_gray) #detects the eyes within the face
-
+                x_eye = (eyecentres[0][0] + eyecentres[1][0])/2
+                y_eye = (eyecentres[0][1] + eyencentres[1][1])/2
                 numeyes = self.getnumeyes(eyes,False)      
             
                 #cuts the number of eyes down to 2 "randomly"

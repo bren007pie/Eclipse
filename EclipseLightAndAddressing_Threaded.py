@@ -255,6 +255,42 @@ def prep_undistort(frame, balance = 1, dim2=None, dim3=None):
     map1, map2 = cv2.fisheye.initUndistortRectifyMap(scaled_K, D, np.eye(3), new_K, dim3, cv2.CV_32FC1)
     return(map1, map2)
 
+#This function takes in raw pixel coordinates and undistorts them
+def undistort(Xpoint, YPoint):
+    #Take difference between rounded map1 and Xpoint
+    Xdiff = abs(round1-Xpoint)
+    #Xmins is 2 arrays corresponding to the X and Y indices of closest
+    #match between Xpoint & Map1 
+    Xmins = np.where(Xdiff <= Xdiff.min() + 1)
+    #list of values in map 2 corresponding to Xmins
+    Ypos = round2[Xmins[0],Xmins[1]]
+    #Take the difference between the list of matched Y positions and Ypoint
+    Ydiff = abs(Ypos-Ypoint)
+    #Get the index of best match between Ypos and Ypoint
+    minidx = np.where(Ydiff == Ydiff.min())
+    #Final indices for map1/map2
+    #These are the final undistorted x,y values of the light source.
+    FinalX = Xmins[1][minidx][0]
+    FinalY = Xmins[0][minidx][0] #Y is inverted in terms of a normal x-y plane
+    return(FinalX,FinalY)
+    
+#This function accounts for black bars from undistortion.
+######SOME PARTS ARE FOR AIR GAPS WHICH SHOULDN'T EXIST ANY MORE)
+#It returns the corrected x,y values in terms of cm on the windshield
+def shift(FinalX, FinalY):
+    #shift final_x and final_y for angle calculations
+    x_shifted = FinalX - row_blk_right[FinalY] - 60 #-60 is the calibration factor for windshield not being exactly in frame
+    #air gap of size approx 50 at left edge
+
+    #this one has air gap on bottom AND top, ALSO y is inverted!
+    y_shifted = FinalY - col_blk_top[FinalX] - 55  #-55 also calib factor
+
+    x_windshield = x_shifted/(x_res-row_blk_left[FinalY]-row_blk_right[FinalY]-60)*width #these also have the calib factor
+    #crop bottom and top air gaps and convert to cm. #55 is top gap, 29 is bottom
+    y_windshield = y_shifted/(y_res-col_blk_top[FinalX]-col_blk_bot[FinalX] -55-35)*height
+    return(x_windshield,y_windshield)
+    
+
 #define location of camera with respect to the windshield in full frame
 width = 139 #total width of windshield
 height = 71.5 #total height of windshield
@@ -278,13 +314,13 @@ time.sleep(2.0)
 
 #grab one frame and call prep_undistort to produce the mapping
 frame = vs.read()
-(map1, map2) = prep_undistort(frame)
 
+(map1, map2) = prep_undistort(frame)
 #round the numbers in map1,map2 to allow for inverse mapping/undistortion
 round1 = np.round(map1)
 round2 = np.round(map2)
 
-#generate lookup table for black bar size using map1 and map2
+#generate 'lookup table' for black bar size using map1 and map2
 row_blk_left = []
 row_blk_right = []
 col_blk_bot = []
@@ -293,7 +329,6 @@ for i in range(y_res):
     row_blk_left.append(len(np.where(map1[i,:] < 0)[0]))
     row_blk_right.append(len(np.where(map1[i,:] > x_res)[0]))
     
-
 #print(len(np.where(map1[200,:]<0)[0]))
 for i in range(x_res):
     col_blk_bot.append(len(np.where(map2[:,i] < 0)[0]))
@@ -301,16 +336,11 @@ for i in range(x_res):
 
 
 
-#debug = (Distance, eye array,etc)
-#debug (1,0,1,0,1)
-#######Head tracking flopped part ends###################################################
-
 #loop until user quits
 #increment = 0
-while True:
-    
-    #######################Head tracking copy paste ends#########################
 
+flag = 3 #default serial flag before loop starts
+while True:
     #update sunlight sensor inputs (vis, IR, UV)
     #(vis,IR,UV) = readSunLight()
     #test prints
@@ -392,42 +422,10 @@ while True:
         Xpoint = cX
         Ypoint = cY        
 
-        #Take difference between rounded map1 and Xpoint
-        Xdiff = abs(round1-Xpoint)
-                
-        #Xmins is 2 arrays corresponding to the X and Y indices of closest match between Xpoint & Map1 
-        Xmins = np.where(Xdiff <= Xdiff.min() + 1)        
-               
-        #list of values in map 2 corresponding to Xmins
-        Ypos = round2[Xmins[0],Xmins[1]]
-        
-        #Take the difference between the list of matched Y positions and Ypoint
-        Ydiff = abs(Ypos-Ypoint)
-        
-        #Get the index of best match between Ypos and Ypoint
-        minidx = np.where(Ydiff == Ydiff.min())
-
+        (FinalX, FinalY) = undistort(cX,cY)               
+        (x_windshield,y_windshield) = shift(FinalX,FinalY)
               
-        #Final indices for map1/map2
-        #These are the final undistorted x,y values of the light source. 
-        FinalX = Xmins[1][minidx][0]
-        FinalY = Xmins[0][minidx][0] #Y is inverted in terms of a normal x-y plane
-        #print FinalX, FinalY
-
-
-
-        #shift final_x and final_y for angle calculations
-        x_shifted = FinalX - row_blk_right[FinalY] - 60 #-60 is the calibration factor for windshield not being exactly in frame
-        #air gap of size approx 50 at left edge
-
-        #this one has air gap on bottom AND top, ALSO y is inverted!
-        y_shifted = FinalY - col_blk_top[FinalX] - 55  #-55 also calib factor
-
-        x_windshield = x_shifted/(x_res-row_blk_left[FinalY]-row_blk_right[FinalY]-60)*width #these also have the calib factor
-        #crop bottom and top air gaps and convert to cm. #55 is top gap, 29 is bottom
-        y_windshield = y_shifted/(y_res-col_blk_top[FinalX]-col_blk_bot[FinalX] -55-35)*height
-      
-        #Convert adjust windshield locations to angle with respect to the camera's normal
+        #Convert adjusted windshield locations to angle with respect to the camera's normal
         #position on windshield
         #Also convert angles to degrees
         alpha.append(math.atan((x_windshield-cam_x_dist)/cam_perp_dist)*180/math.pi)
@@ -445,115 +443,151 @@ while True:
     #show the frame for debugging
     #for true calibration this would need to be 'unfisheyed'
     cv2.imshow("Frame", frame)
-        
-
+      
     
     key = cv2.waitKey(1) & 0xFF
     #if the 'q' key was pressed then break the loop
     if key == ord("q"):
         break
+    
+    #reset previously read list of alphas,phis
+    #before reading from the serial buffer, check if the last flag was 3. If so, that
+    #means a fresh new batch of info is coming so need to clear the below arrays.
+    #The next time the buffer is read it should be the 1 flag.
 
-    #reset previously read alpha,phi
-    alpha_other = 0
-    phi_other = 0
+    if flag == 3:      
+        alpha_other = [None,None]
+        phi_other = [None,None]
+        x1_array = []
+        x2_array = []
+        y1_array = []
+        y2_array = []
+        dx_array = []
+        dy_array = []
+        dz_array = []
     #perform serial read operations if something is in the buffer
     if ser.inWaiting():
-        x_array = []
-        y_array = []
-        for i in range(2):
-            x_array.append(ser.read()) 
 
-        for i in range(2):
-            y_array.append(ser.read())
-        
-        x_packed = x_array[0] + x_array[1]
-        x_unpacked = struct.unpack('h', x_packed)
-        x_read = x_unpacked[0]
+        #save integers 1,2,3 as flag if they come in
+        #if prev integer was 1, it's light 1
+        #if prev integer was 2, it's light 2
+        #if prev integer was 3, it's driver
+        #if no flag is detected then continue without further reading the serial buffer
+        #reset key arrays after math is done if the last flag was 3
 
-        y_packed = y_array[0] + y_array[1]
-        y_unpacked = struct.unpack('h', y_packed)
-        y_read = y_unpacked[0]
-        #print('other x: ' + str(x_read))
-        #print('other y: ' + str(y_read))
+        flag = ser.read() #now read from the serial buffer to decide what to do next
 
-        Xpoint2 = x_read
-        Ypoint2 = y_read    
+        if  flag == 1:
+            current_read = ser.read() #save current read value so it's not lost somehow after checking it
+            if current_read != 1: #good chance that don't actually need to wait for this to happen
+                x1_array.append(current_read) #add first byte
+                x1_array.append(ser.read()) #add second byte
+                for i in range(2):
+                    y1_array.append(ser.read())
 
-        #Take difference between rounded map1 and Xpoint
-        Xdiff2 = abs(round1-Xpoint2)
-                
-        #Xmins is 2 arrays corresponding to the X and Y indices of closest match between Xpoint & Map1 
-        Xmins2 = np.where(Xdiff2 <= Xdiff2.min() + 1)        
-               
-        #list of values in map 2 corresponding to Xmins
-        Ypos2 = round2[Xmins2[0],Xmins2[1]]
-        
-        #Take the difference between the list of matched Y positions and Ypoint
-        Ydiff2 = abs(Ypos2-Ypoint2)
-        
-        #Get the index of best match between Ypos and Ypoint
-        minidx = np.where(Ydiff2 == Ydiff2.min())
+                x1_packed = x1_array[0] + x1_array[1]
+                x1_unpacked = struct.unpack('h', x1_packed)
+                x1_read = x1_unpacked[0]
               
-        #Final indices for map1/map2
-        #These are the final undistorted x,y values of the light source. 
-        FinalX2 = Xmins2[1][minidx][0]
-        FinalY2 = Xmins2[0][minidx][0] #Y is inverted in terms of a normal x-y plane
-        #print FinalX, FinalY
+                y1_packed = y1_array[0] + y1_array[1]
+                y1_unpacked = struct.unpack('h', y1_packed)
+                y1_read = y1_unpacked[0]
 
-        #shift final_x and final_y for angle calculations
-        x_shifted_other = FinalX2 - row_blk_left[FinalY2] #-50 is the calibration factor for windshield not being exactly in frame
-        print('x_shifted2: ' + str(x_shifted_other))
-        #air gap of size approx 50 at left edge
+                (FinalX_other1,FinalY_other1) = undistort(x1_read,y1_read)
+                (x_windshield_other1, y_windshield_other1) = shift(FinalX_other1,FinalY_other1)
 
-        #this one has air gap on bottom AND top, AAANDDD y is inverted!
-        y_shifted_other = FinalY2 - col_blk_top[FinalX2] - 80  #-55 also calib factor
-        print('y_shifted2: ' + str(y_shifted_other))
+                #now convert read x,y to angles
+                #note addition of cam_spacing to get correct alpha of right camera
+                alpha_other[0] = math.atan((x_windshield_other1-(cam_x_dist + cam_spacing))/cam_perp_dist)*180/math.pi
+                phi_other[0] = -math.atan((y_windshield_other1-cam_y_dist)/cam_perp_dist)*180/math.pi
+                #print('other alpha 1: ' + str(alpha_other[0]))
+                #print('other phi 1: ' + str(phi_other[0]))
+                
+           
+        if flag == 2:
+            current_read = ser.read()
+            if current_read != 2:
+                x2_array.append(current_read)
+                x2_array.append(ser.read())
+                for i in range(2):
+                    y2_array.append(ser.read())
 
-        x_windshield_other = x_shifted_other/(x_res-row_blk_left[FinalY2]-row_blk_right[FinalY2] - 105)*width #these also have the calib factor
-        #crop bottom and top air gaps and convert to cm. #55 is top gap, 29 is bottom
-        y_windshield_other = y_shifted_other/(y_res-col_blk_top[FinalX2]-col_blk_bot[FinalX2] -80 - 60)*height
-      
+                x2_packed = x2_array[0] + x2_array[1]
+                x2_unpacked = struct.unpack('h', x2_packed)
+                x2_read = x2_unpacked[0]
 
-        #convert to distance on windshield
-        #x_windshield_other = 1.0*x_read/x_res*width
-        #y_windshield_other = 1.0*(y_res-y_read)/y_res*height #in the process uninvert y
-        #now convert read x,y to angles
-        #note addition of cam_spacing to get correct alpha of right camera
-        alpha_other = math.atan((x_windshield_other-(cam_x_dist + cam_spacing))/cam_perp_dist)*180/math.pi
-        phi_other = -math.atan((y_windshield_other-cam_y_dist)/cam_perp_dist)*180/math.pi
-        print('other alpha: ' + str(alpha_other))
-        print('other phi: ' + str(phi_other))
+                y2_packed = y2_array[0] + y2_array[1]
+                y2_unpacked = struct.unpack('h', y2_packed)
+                y2_read = y2_unpacked[0]
+
+                (FinalX_other2,FinalY_other2) = undistort(x2_read,y2_read)
+                (x_windshield_other2, y_windshield_other2) = shift(FinalX_other2,FinalY_other2)
+                
+                #now convert read x,y to angles
+                #note addition of cam_spacing to get correct alpha of right camera
+                alpha_other[1] = math.atan((x_windshield_other2-(cam_x_dist + cam_spacing))/cam_perp_dist)*180/math.pi
+                phi_other[1] = -math.atan((y_windshield_other2-cam_y_dist)/cam_perp_dist)*180/math.pi
+                #print('other alpha 2: ' + str(alpha_other[1]))
+                #print('other phi 2: ' + str(phi_other[1]))
+                    
+        if flag == 3:          
+            current_read = ser.read()
+            if current_read != 3:
+                dx_array.append(current_read)
+                dx_array.append(ser.read())
+                for i in range(2):
+                    dy_array.append(ser.read())
+                for i in range(2):
+                    dz_array.append(ser.read())
+        
+                dx_packed = dx_array[0] + dx_array[1]
+                dx_unpacked = struct.unpack('h', dx_packed)
+                dx_read = dx_unpacked[0]
+
+                dy_packed = dy_array[0] + dy_array[1]
+                dy_unpacked = struct.unpack('h', dy_packed)
+                dy_read = dy_unpacked[0]
+
+                dz_packed = dz_array[0] + dz_array[1]
+                dz_unpacked = struct.unpack('h', dz_packed)
+                dz_read = dz_unpacked[0]/10.0 #divide by 10 since it was multiplied by 10 before being sent. 
+        
+                     
+    ########HUGE OVERHAUL FOR PARALLAX IS NEEDED#################### (Useless as it is now)
+    #########SAVE FOR AFTER INTEGRATION???#########################
 
     #parallax correction math
-    #only works for a single light for now
+    #ONLY WORKS FOR A SINGLE LIGHT FOR NOW
     #naming conventions from module report
     #actual trig is slightly modified
     
-    if len(alpha) == 1 and len(phi) == 1 and alpha_other and phi_other:
-        #horizontal part:
-        theta_c1 = (90-alpha[0])*math.pi/180 #convert each to radians
-        theta_c2 = (90+alpha_other)*math.pi/180
-        theta_SC = math.pi-theta_c1-theta_c2
-        d_c1 = cam_spacing/math.sin(theta_SC)*math.sin(theta_c2)
-        d = d_c1*math.sin(theta_c1) #the key perp distance to light source
-        #now get the horizontal driver angle
-        d_D = math.sqrt(math.pow(d_c1,2) + math.pow(driver_dist,2)-2*d_c1*driver_dist*math.cos(math.pi-theta_c1))  
-        theta_Dx = math.asin(d_c1/d_D*math.sin(math.pi-theta_c1))
-    
-        #vertical part:
-        phi_c = (phi[0] + phi_other)/2.0*math.pi/180 #take the average and convert to radians
-        a = d*math.tan(phi_c)
-        c = math.sqrt(math.pow(a,2) + math.pow(d,2))
-        #now get the vertical driver angle
-        s = math.sqrt(math.pow(c,2) + math.pow(driver_h,2) - 2*c*driver_h*math.cos(math.pi/2-phi_c))
-        theta_Dy = math.asin(c/s*math.sin(math.pi/2-phi_c))
-
-        #convert to alpha,phi convention and to degrees
-        alpha_D = (math.pi/2-theta_Dx)*180/math.pi
-        phi_D = (theta_Dy - math.pi/2)*180/math.pi
-
-        print('Driver alpha: ' + str(alpha_D))
-        print('Driver phi: ' + str(phi_D))
+##    if len(alpha) == 1 and len(phi) == 1 and alpha_other[0] and phi_other[0]:
+##        #horizontal part:
+##        theta_c1 = (90-alpha[0])*math.pi/180 #convert each to radians
+##        theta_c2 = (90+alpha_other[0])*math.pi/180
+##        theta_SC = math.pi-theta_c1-theta_c2
+##        d_c1 = cam_spacing/math.sin(theta_SC)*math.sin(theta_c2)
+##        d = d_c1*math.sin(theta_c1) #the key perp distance to light source
+##        
+##        #now get the horizontal driver angle
+##        d_D = math.sqrt(math.pow(d_c1,2) + math.pow(driver_dist,2)-2*d_c1*driver_dist*math.cos(math.pi-theta_c1))  
+##        theta_Dx = math.asin(d_c1/d_D*math.sin(math.pi-theta_c1))
+##    
+##        #vertical part:
+##        phi_c = (phi[0] + phi_other[0])/2.0*math.pi/180 #take the average and convert to radians
+##        a = d*math.tan(phi_c)
+##        c = math.sqrt(math.pow(a,2) + math.pow(d,2))
+##        
+##        #now get the vertical driver angle
+##        s = math.sqrt(math.pow(c,2) + math.pow(driver_h,2) - 2*c*driver_h*math.cos(math.pi/2-phi_c))
+##        theta_Dy = math.asin(c/s*math.sin(math.pi/2-phi_c))
+##
+##        #convert to alpha,phi convention and to degrees
+##        alpha_D = (math.pi/2-theta_Dx)*180/math.pi
+##        phi_D = (theta_Dy - math.pi/2)*180/math.pi
+##
+##        #print('Driver alpha: ' + str(alpha_D))
+##        #print('Driver phi: ' + str(phi_D))
 
     #flush the serial buffer
     ser.flush()

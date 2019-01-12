@@ -121,7 +121,7 @@ class HeadTrackingThreaded:
         while True:
             ret, img = self.cap.read() #reads in the image
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) #converts to grayscale
-            faces = self.face_cascade.detectMultiScale(gray, 1.6, 5,0,(60, 60)) #detects faces in the grayscale image
+            faces = self.face_cascade.detectMultiScale(gray, 1.3, 5,0,(60, 60)) #detects faces in the grayscale image
             #parameters to detectMultiScale: image, scalefactor (image size reduction), minNeighbours, flags, minSize
 
             dist = self.distance(False) #does the ultrasonic distance measurement, True is the debug
@@ -499,7 +499,6 @@ while True:
         FinalX = Xmins[1][minidx][0]
         FinalY = Xmins[0][minidx][0] #Y is inverted in terms of a normal x-y plane
         #print FinalX, FinalY
-
 
 
         #shift final_x and final_y for angle calculations
