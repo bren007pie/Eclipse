@@ -364,23 +364,6 @@ def undistort(Xpoint, Ypoint):
     FinalY = Xmins[0][minidx][0] #Y is inverted in terms of a normal x-y plane
     return(FinalX,FinalY)
 
-####DEPRACATED FUNCTION#####    
-#This function accounts for black bars from undistortion.
-######SOME PARTS ARE FOR AIR GAPS WHICH SHOULDN'T EXIST ANY MORE)
-#It returns the corrected x,y values in terms of cm on the windshield
-##def shift(FinalX, FinalY):
-##    #shift final_x and final_y for angle calculations
-##    x_shifted = FinalX - row_blk_right[FinalY] - 60 #-60 is the calibration factor for windshield not being exactly in frame
-##    #air gap of size approx 50 at left edge
-##
-##    #this one has air gap on bottom AND top, ALSO y is inverted!
-##    y_shifted = FinalY - col_blk_top[FinalX] - 55  #-55 also calib factor
-##
-##    x_windshield = x_shifted/(x_res-row_blk_left[FinalY]-row_blk_right[FinalY]-60)*width #these also have the calib factor
-##    #crop bottom and top air gaps and convert to cm. #55 is top gap, 29 is bottom
-##    y_windshield = y_shifted/(y_res-col_blk_top[FinalX]-col_blk_bot[FinalX] -55-35)*height
-##    return(x_windshield,y_windshield)
-    
 
 def correctedAngleCalc(pixelX,pixelY):
     pixelXMax = x_res - row_blk_right[pixelY] #in reality the maxes of these will depend on
@@ -390,21 +373,21 @@ def correctedAngleCalc(pixelX,pixelY):
     cal_height = 0.5 #ex. height of windshield
     alpha = math.degrees(math.atan((cal_width/2)*((pixelX-x_res/2)/(pixelXMax - x_res/2))/cal_depth))
     phi = math.degrees(math.atan((cal_height/2)*((pixelY-y_res/2)/(pixelYMax - y_res/2))/cal_depth))
-    #print(str(alpha))
-    #print(str(phi))
-    return(alpha,phi)
-
-def naiveAngleCalc(pixelX,pixelY):
-    pixelXMax = x_res  
-    pixelYMax = y_res
-    cal_depth = 0.5  #whatever depth it takes in calibration to fill the frame
-    cal_width = 1 #ex. width of windshield
-    cal_height = 0.5 #ex. height of windshield
-    alpha = math.degrees(math.atan((cal_width/2)*((pixelX-pixelXMax/2)/(pixelXMax/2))/cal_depth))
-    phi = math.degrees(math.atan((cal_height/2)*((pixelY-pixelYMax/2)/(pixelYMax/2))/cal_depth))
     print(str(alpha))
     print(str(phi))
     return(alpha,phi)
+
+##def naiveAngleCalc(pixelX,pixelY):
+##    pixelXMax = x_res  
+##    pixelYMax = y_res
+##    cal_depth = 0.5  #whatever depth it takes in calibration to fill the frame
+##    cal_width = 1 #ex. width of windshield
+##    cal_height = 0.5 #ex. height of windshield
+##    alpha = math.degrees(math.atan((cal_width/2)*((pixelX-pixelXMax/2)/(pixelXMax/2))/cal_depth))
+##    phi = math.degrees(math.atan((cal_height/2)*((pixelY-pixelYMax/2)/(pixelYMax/2))/cal_depth))
+##    print(str(alpha))
+##    print(str(phi))
+##    return(alpha,phi)
 
 
     
@@ -452,8 +435,8 @@ for i in range(x_res):
     col_blk_top.append(len(np.where(map2[:,i] > y_res)[0]))
 
 #####DEBUGGING############
-correctedAngleCalc(160,240)
-naiveAngleCalc(160,240)
+correctedAngleCalc(0,240)
+#naiveAngleCalc(160,240)
 ##########################
 
 #loop until user quits
