@@ -100,7 +100,7 @@ class GridAddressing:
         GPIO.setwarnings(0)
 
         #list of pins to be used as outputs
-        channels = list(range(4,25))
+        channels = list(range(4,14))+list(range(16,27))
         GPIO.setup(channels, GPIO.OUT, initial = 1)
 
         #list of pins corresponding to row and column voltage control
@@ -108,7 +108,7 @@ class GridAddressing:
         self.columnVoltagePins = channels[7:]
 
         #set frequency of oscillation
-        freq = 1
+        freq = 0.25
         self.halfT = 0.49/freq
 
 
@@ -120,11 +120,96 @@ class GridAddressing:
 
     def update(self):
         while True:
-            x1,y1 = 0,0
-            x2,y2 = 1,1
-            x3,y3 = None,None
-            x4,y4 = None,None
+            #constants and variables
+            xCam1 = 35
+            yCam2 = 35
+            dSensorToWindshield = 30
+            acceptableError = 3
+
+            #outputs from Light Tracking (in deg)
+            alpha1 = 25
+            phi1 = 15
+            alpha2 = -4
+            phi2 = -34
+
+            #outputs from Driver Tracking (in cm)
+            horizontalDisplacement = 0
+            verticalDisplacement = 0
+            depthSensorToDriver = 20
+
+            x1 = y1 = x2 = y2 = x3 = y3 = x4 = y4 = None
             
+            dDriver = dSensorToWindshield + depthSensorToDriver
+            xDriver = xCam1 + horizontalDisplacement
+            yDriver = yCam2 + verticalDisplacement
+            
+            if type(alpha1) != type(None):
+                xProjection1 = dDriver*math.tan(math.radians(alpha1)) + xDriver
+                yProjection1 = dDriver*math.tan(math.radians(phi1)) + yDriver
+                
+                column1 = int(xProjection1/10)
+                row1 = int(yProjection1/10)
+                
+                xError1 = xProjection1 - (10*column1 + 5)
+                yError1 = yProjection1 - (10*row1 + 5)
+                
+                x1 = column1
+                y1 = row1
+                
+                if type(alpha2) != type(None):
+                    xProjection2 = dDriver*math.tan(math.radians(alpha2)) + xDriver
+                    yProjection2 = dDriver*math.tan(math.radians(phi2)) + yDriver
+                    
+                    column2 = int(xProjection2/10)
+                    row2 = int(yProjection2/10)
+                    
+                    xError2 = xProjection2 - (10*column2 + 5)
+                    yError2 = yProjection2 - (10*row2 + 5)
+                    
+                    x2 = column2
+                    y2 = row2
+
+                #update errors to ignore "bound" cases (edges of windshield)
+                #do stuff depending on the size of the error
+                if (abs(xError1) > acceptableError) or (abs(yError1) > acceptableError):
+                    if xError1 < -acceptableError:
+                        x2 = column1 - 1
+                    elif xError1 > acceptableError:
+                        x2 = column1 + 1
+                    else:
+                        x2 = column1
+                    
+                    if yError1 < -acceptableError:
+                        y2 = row1 - 1
+                    elif yError1 > acceptableError:
+                        y2 = row1 + 1
+                    else:
+                        y2 = row1
+                    
+                    if type(alpha2) != type(None):
+                        x3 = column2
+                        y3 = row2
+                        
+                        if (abs(xError2) > acceptableError) or (abs(yError2) > acceptableError):
+                            if xError2 < -acceptableError:
+                                x4 = column2 - 1
+                            elif xError2 > acceptableError:
+                                x4 = column2 + 1
+                            else:
+                                x4 = column2
+                    
+                            if yError2 < -acceptableError:
+                                y4 = row2 - 1
+                            elif yError2 > acceptableError:
+                                y4 = row2 + 1
+                            else:
+                                y4 = row2
+            
+##            x1,y1 = 0,0
+##            x2,y2 = 1,1
+##            x3,y3 = None,None
+##            x4,y4 = None,None
+           
             if x2 == None:
                 print("only one location")
                 self.flicker2([self.columnVoltagePins[x1]],[self.rowVoltagePins[y1]])
@@ -157,12 +242,17 @@ class GridAddressing:
                  
             #potentially incomplete: might require redundancy of which locations make up each four-tile square
             else:
-                print("2 four-tile squares")
                 if (abs(x1-x3) >= 2 and abs(x2-x4)) and (abs(y1-y3) >= 2 and abs(y2-y4)):
                     self.flicker8([self.columnVoltagePins[x1],self.columnVoltagePins[x2],self.columnVoltagePins[x3],self.columnVoltagePins[x4]], [self.rowVoltagePins[y1],self.rowVoltagePins[y2],self.rowVoltagePins[y3],self.rowVoltagePins[y4]], False)
-                
+                    print("2 four-tile squares")
+                                    
                 elif ((x1 == x3) and (x2 == x4)) != ((y1 == y3) and (y2 == y4)):
                     self.flicker8([self.columnVoltagePins[x1],self.columnVoltagePins[x2],self.columnVoltagePins[x3],self.columnVoltagePins[x4]], [self.rowVoltagePins[y1],self.rowVoltagePins[y2],self.rowVoltagePins[y3],self.rowVoltagePins[y4]], True)    
+                    print("2 four-tile squares")
+                    
+                else:
+                    print("inPhase is None type! :( :(")
+            
 
         return
 
@@ -209,7 +299,7 @@ class GridAddressing:
             time.sleep(self.halfT)
             GPIO.output([X[0],Y[0],X[1],Y[1],X[2],Y[2],X[3],Y[3]],[1,0,1,0,0,1,0,1])
             time.sleep(self.halfT)
-                  
+
     def stop(self):
         self.stopped = True
         GPIO.cleanup()
@@ -227,7 +317,7 @@ y_res = 480
 #set up serial port
 ser = serial.Serial(
     port='/dev/serial0',
-    baudrate = 9600, #max baudrate
+    baudrate = 9600, 
     parity = serial.PARITY_NONE,#not ensuring accurate transmission
     stopbits = serial.STOPBITS_ONE,
     bytesize = serial.EIGHTBITS,
@@ -256,7 +346,7 @@ def prep_undistort(frame, balance = 1, dim2=None, dim3=None):
     return(map1, map2)
 
 #This function takes in raw pixel coordinates and undistorts them
-def undistort(Xpoint, YPoint):
+def undistort(Xpoint, Ypoint):
     #Take difference between rounded map1 and Xpoint
     Xdiff = abs(round1-Xpoint)
     #Xmins is 2 arrays corresponding to the X and Y indices of closest
@@ -273,36 +363,63 @@ def undistort(Xpoint, YPoint):
     FinalX = Xmins[1][minidx][0]
     FinalY = Xmins[0][minidx][0] #Y is inverted in terms of a normal x-y plane
     return(FinalX,FinalY)
-    
+
+####DEPRACATED FUNCTION#####    
 #This function accounts for black bars from undistortion.
 ######SOME PARTS ARE FOR AIR GAPS WHICH SHOULDN'T EXIST ANY MORE)
 #It returns the corrected x,y values in terms of cm on the windshield
-def shift(FinalX, FinalY):
-    #shift final_x and final_y for angle calculations
-    x_shifted = FinalX - row_blk_right[FinalY] - 60 #-60 is the calibration factor for windshield not being exactly in frame
-    #air gap of size approx 50 at left edge
-
-    #this one has air gap on bottom AND top, ALSO y is inverted!
-    y_shifted = FinalY - col_blk_top[FinalX] - 55  #-55 also calib factor
-
-    x_windshield = x_shifted/(x_res-row_blk_left[FinalY]-row_blk_right[FinalY]-60)*width #these also have the calib factor
-    #crop bottom and top air gaps and convert to cm. #55 is top gap, 29 is bottom
-    y_windshield = y_shifted/(y_res-col_blk_top[FinalX]-col_blk_bot[FinalX] -55-35)*height
-    return(x_windshield,y_windshield)
+##def shift(FinalX, FinalY):
+##    #shift final_x and final_y for angle calculations
+##    x_shifted = FinalX - row_blk_right[FinalY] - 60 #-60 is the calibration factor for windshield not being exactly in frame
+##    #air gap of size approx 50 at left edge
+##
+##    #this one has air gap on bottom AND top, ALSO y is inverted!
+##    y_shifted = FinalY - col_blk_top[FinalX] - 55  #-55 also calib factor
+##
+##    x_windshield = x_shifted/(x_res-row_blk_left[FinalY]-row_blk_right[FinalY]-60)*width #these also have the calib factor
+##    #crop bottom and top air gaps and convert to cm. #55 is top gap, 29 is bottom
+##    y_windshield = y_shifted/(y_res-col_blk_top[FinalX]-col_blk_bot[FinalX] -55-35)*height
+##    return(x_windshield,y_windshield)
     
 
+def correctedAngleCalc(pixelX,pixelY):
+    pixelXMax = x_res - row_blk_right[pixelY] #in reality the maxes of these will depend on
+    pixelYMax = y_res - col_blk_top[pixelX] #the black bars
+    cal_depth = 0.5  #whatever depth it takes in calibration to fill the frame
+    cal_width = 1 #ex. width of windshield
+    cal_height = 0.5 #ex. height of windshield
+    alpha = math.degrees(math.atan((cal_width/2)*((pixelX-x_res/2)/(pixelXMax - x_res/2))/cal_depth))
+    phi = math.degrees(math.atan((cal_height/2)*((pixelY-y_res/2)/(pixelYMax - y_res/2))/cal_depth))
+    #print(str(alpha))
+    #print(str(phi))
+    return(alpha,phi)
+
+def naiveAngleCalc(pixelX,pixelY):
+    pixelXMax = x_res  
+    pixelYMax = y_res
+    cal_depth = 0.5  #whatever depth it takes in calibration to fill the frame
+    cal_width = 1 #ex. width of windshield
+    cal_height = 0.5 #ex. height of windshield
+    alpha = math.degrees(math.atan((cal_width/2)*((pixelX-pixelXMax/2)/(pixelXMax/2))/cal_depth))
+    phi = math.degrees(math.atan((cal_height/2)*((pixelY-pixelYMax/2)/(pixelYMax/2))/cal_depth))
+    print(str(alpha))
+    print(str(phi))
+    return(alpha,phi)
+
+
+    
 #define location of camera with respect to the windshield in full frame
-width = 139 #total width of windshield
-height = 71.5 #total height of windshield
-cam_perp_dist = 60 #perpendicular distance from camera to windshield in cm
-cam_spacing = 10
-cam_x_dist = width/2 - cam_spacing/2 #horizontal distance from left edge of windshield to camera
+#width = 139 #total width of windshield
+#height = 71.5 #total height of windshield
+#cam_perp_dist = 60 #perpendicular distance from camera to windshield in cm
+#cam_spacing = 10
+#cam_x_dist = width/2 - cam_spacing/2 #horizontal distance from left edge of windshield to camera
 #^ 65 cm corresponds to the left camera with a spacing of 10 cm between the two. 
-cam_y_dist = height/2 #camera should be centred vertically accoutning for the incline of the windshield
-x_centreline = width/2 #half of windshield width
-FOV = 2*math.atan((width-cam_x_dist)/cam_perp_dist)*180/math.pi #total field of view of the camera in radians
-driver_dist = 20 #horizontal distance from driver to left camera
-driver_h = 40 #vertical distance (height) of driver above cameras
+#cam_y_dist = height/2 #camera should be centred vertically accoutning for the incline of the windshield
+#x_centreline = width/2 #half of windshield width
+#FOV = 2*math.atan((width-cam_x_dist)/cam_perp_dist)*180/math.pi #total field of view of the camera in radians
+#driver_dist = 20 #horizontal distance from driver to left camera
+#driver_h = 40 #vertical distance (height) of driver above cameras
 
 #start objects from other Classes
 vs = PiCamThreaded().start()
@@ -334,11 +451,12 @@ for i in range(x_res):
     col_blk_bot.append(len(np.where(map2[:,i] < 0)[0]))
     col_blk_top.append(len(np.where(map2[:,i] > y_res)[0]))
 
-
+#####DEBUGGING############
+correctedAngleCalc(160,240)
+naiveAngleCalc(160,240)
+##########################
 
 #loop until user quits
-#increment = 0
-
 flag = 3 #default serial flag before loop starts
 while True:
     #update sunlight sensor inputs (vis, IR, UV)
@@ -423,13 +541,20 @@ while True:
         Ypoint = cY        
 
         (FinalX, FinalY) = undistort(cX,cY)               
-        (x_windshield,y_windshield) = shift(FinalX,FinalY)
-              
+
+        #(x_windshield,y_windshield) = shift(FinalX,FinalY)
+         
         #Convert adjusted windshield locations to angle with respect to the camera's normal
         #position on windshield
         #Also convert angles to degrees
-        alpha.append(math.atan((x_windshield-cam_x_dist)/cam_perp_dist)*180/math.pi)
-        phi.append(-math.atan((y_windshield-cam_y_dist)/cam_perp_dist)*180/math.pi) #has a negative sign to account for inverted FinalY
+        #alpha.append(math.atan((x_windshield-cam_x_dist)/cam_perp_dist)*180/math.pi)
+        #phi.append(-math.atan((y_windshield-cam_y_dist)/cam_perp_dist)*180/math.pi) #has a negative sign to account for inverted FinalY
+
+        #using new angle calc method from calibration!
+
+        (temp_alpha,temp_phi) = correctedAngleCalc(FinalX,FinalY)
+        alpha.append(temp_alpha)
+        phi.append(temp_phi)
         
         #print angles for current light
         #print(str(row_blk_left[int(FinalY)]))
@@ -450,109 +575,152 @@ while True:
     if key == ord("q"):
         break
     
-    #reset previously read list of alphas,phis
-    #before reading from the serial buffer, check if the last flag was 3. If so, that
-    #means a fresh new batch of info is coming so need to clear the below arrays.
-    #The next time the buffer is read it should be the 1 flag.
+    
 
-    if flag == 3:      
-        alpha_other = [None,None]
-        phi_other = [None,None]
-        x1_array = []
-        x2_array = []
-        y1_array = []
-        y2_array = []
-        dx_array = []
-        dy_array = []
-        dz_array = []
     #perform serial read operations if something is in the buffer
     if ser.inWaiting():
+  
+        flag_array = []
+        for i in range(2):
+            flag_array.append(ser.read())
+        
+        flag_packed = flag_array[0] + flag_array[1]
+        flag_unpacked = struct.unpack('h', flag_packed)
+        flag = int(flag_unpacked[0])
 
-        #save integers 1,2,3 as flag if they come in
-        #if prev integer was 1, it's light 1
-        #if prev integer was 2, it's light 2
-        #if prev integer was 3, it's driver
-        #if no flag is detected then continue without further reading the serial buffer
-        #reset key arrays after math is done if the last flag was 3
-
-        flag = ser.read() #now read from the serial buffer to decide what to do next
-
+        print('read something: ' + str(flag))
+        #print('translated: ' +str(ord(flag)))
         if  flag == 1:
-            current_read = ser.read() #save current read value so it's not lost somehow after checking it
-            if current_read != 1: #good chance that don't actually need to wait for this to happen
-                x1_array.append(current_read) #add first byte
-                x1_array.append(ser.read()) #add second byte
-                for i in range(2):
-                    y1_array.append(ser.read())
+            print('read 1')
+            #save current read value so it's not lost somehow after checking it
+            #if ord(current_read) != 1: #good chance that don't actually need to wait for this to happen
+            x1_array = []
+            y1_array = []
 
-                x1_packed = x1_array[0] + x1_array[1]
-                x1_unpacked = struct.unpack('h', x1_packed)
-                x1_read = x1_unpacked[0]
-              
-                y1_packed = y1_array[0] + y1_array[1]
-                y1_unpacked = struct.unpack('h', y1_packed)
-                y1_read = y1_unpacked[0]
+            for i in range(2):
+                x1_array.append(ser.read())
+                #print(x1_array[i])
+            
+            for i in range(2):
+                y1_array.append(ser.read())
+                #print(y1_array[i])
 
-                (FinalX_other1,FinalY_other1) = undistort(x1_read,y1_read)
-                (x_windshield_other1, y_windshield_other1) = shift(FinalX_other1,FinalY_other1)
+            x1_packed = x1_array[0] + x1_array[1]
+            x1_unpacked = struct.unpack('h', x1_packed)
+            x1_read = x1_unpacked[0]
+          
+            y1_packed = y1_array[0] + y1_array[1]
+            y1_unpacked = struct.unpack('h', y1_packed)
+            y1_read = y1_unpacked[0]
 
-                #now convert read x,y to angles
-                #note addition of cam_spacing to get correct alpha of right camera
-                alpha_other[0] = math.atan((x_windshield_other1-(cam_x_dist + cam_spacing))/cam_perp_dist)*180/math.pi
-                phi_other[0] = -math.atan((y_windshield_other1-cam_y_dist)/cam_perp_dist)*180/math.pi
-                #print('other alpha 1: ' + str(alpha_other[0]))
-                #print('other phi 1: ' + str(phi_other[0]))
-                
-           
+            (FinalX_other1,FinalY_other1) = undistort(x1_read,y1_read)
+
+            #(x_windshield_other1, y_windshield_other1) = shift(FinalX_other1,FinalY_other1)
+
+            #now convert read x,y to angles
+            #note addition of cam_spacing to get correct alpha of right camera
+            #alpha_other[0] = math.atan((x_windshield_other1-cam_x_dist)/cam_perp_dist)*180/math.pi
+            #phi_other[0] = -math.atan((y_windshield_other1-cam_y_dist)/cam_perp_dist)*180/math.pi
+
+            (temp_alpha,temp_phi) = correctedAngleCalc(FinalX_other1,FinalY_other1)
+            alpha_other[0] = temp_alpha
+            phi_other[0] = temp_phi
+
+            print('other x 1: ' + str(x1_read))
+            print('other y 1: ' + str(y1_read))
+            print('other alpha 1: ' + str(alpha_other[0]))
+            print('other phi 1: ' + str(phi_other[0]))
+            
+
+            #change to next flag value after taking in first light
+            flag_array = []
+            for i in range(2):
+                flag_array.append(ser.read())
+            
+            flag_packed = flag_array[0] + flag_array[1]
+            flag_unpacked = struct.unpack('h', flag_packed)
+            flag = int(flag_unpacked[0])
+        
+       
         if flag == 2:
-            current_read = ser.read()
-            if current_read != 2:
-                x2_array.append(current_read)
+            print('read 2')
+            
+            x2_array = []
+            y2_array = []
+            
+            for i in range(2):
                 x2_array.append(ser.read())
-                for i in range(2):
-                    y2_array.append(ser.read())
-
-                x2_packed = x2_array[0] + x2_array[1]
-                x2_unpacked = struct.unpack('h', x2_packed)
-                x2_read = x2_unpacked[0]
-
-                y2_packed = y2_array[0] + y2_array[1]
-                y2_unpacked = struct.unpack('h', y2_packed)
-                y2_read = y2_unpacked[0]
-
-                (FinalX_other2,FinalY_other2) = undistort(x2_read,y2_read)
-                (x_windshield_other2, y_windshield_other2) = shift(FinalX_other2,FinalY_other2)
                 
-                #now convert read x,y to angles
-                #note addition of cam_spacing to get correct alpha of right camera
-                alpha_other[1] = math.atan((x_windshield_other2-(cam_x_dist + cam_spacing))/cam_perp_dist)*180/math.pi
-                phi_other[1] = -math.atan((y_windshield_other2-cam_y_dist)/cam_perp_dist)*180/math.pi
-                #print('other alpha 2: ' + str(alpha_other[1]))
-                #print('other phi 2: ' + str(phi_other[1]))
-                    
-        if flag == 3:          
-            current_read = ser.read()
-            if current_read != 3:
-                dx_array.append(current_read)
+            for i in range(2):
+                y2_array.append(ser.read())
+
+            x2_packed = x2_array[0] + x2_array[1]
+            x2_unpacked = struct.unpack('h', x2_packed)
+            x2_read = x2_unpacked[0]
+
+            y2_packed = y2_array[0] + y2_array[1]
+            y2_unpacked = struct.unpack('h', y2_packed)
+            y2_read = y2_unpacked[0]
+
+            (FinalX_other2,FinalY_other2) = undistort(x2_read,y2_read)
+
+            #(x_windshield_other2, y_windshield_other2) = shift(FinalX_other2,FinalY_other2)
+            
+            #now convert read x,y to angles
+            #note addition of cam_spacing to get correct alpha of right camera
+            #alpha_other[1] = math.atan((x_windshield_other2-(cam_x_dist + cam_spacing))/cam_perp_dist)*180/math.pi
+            #phi_other[1] = -math.atan((y_windshield_other2-cam_y_dist)/cam_perp_dist)*180/math.pi
+            #print('other alpha 2: ' + str(alpha_other[1]))
+            #print('other phi 2: ' + str(phi_other[1]))
+
+            (temp_alpha,temp_phi) = correctedAngleCalc(FinalX_other2,FinalY_other2)
+            alpha_other[1] = temp_alpha
+            phi_other[1] = temp_phi
+
+            print('other x 2: ' + str(x1_read))
+            print('other y 2: ' + str(y1_read))
+            print('other alpha 2: ' + str(alpha_other[1]))
+            print('other phi 2: ' + str(phi_other[1]))
+            
+            #change to next flag value after taking in second light
+            flag_array = []
+            for i in range(2):
+                flag_array.append(ser.read())
+            
+            flag_packed = flag_array[0] + flag_array[1]
+            flag_unpacked = struct.unpack('h', flag_packed)
+            flag = int(flag_unpacked[0])
+            
+                
+        if flag == 3:
+            print('read 3')
+
+            dx_array = []
+            dy_array = []
+            dz_array = []
+            
+            for i in range(2):
                 dx_array.append(ser.read())
-                for i in range(2):
-                    dy_array.append(ser.read())
-                for i in range(2):
-                    dz_array.append(ser.read())
-        
-                dx_packed = dx_array[0] + dx_array[1]
-                dx_unpacked = struct.unpack('h', dx_packed)
-                dx_read = dx_unpacked[0]
+            for i in range(2):
+                dy_array.append(ser.read())
+            for i in range(2):
+                dz_array.append(ser.read())
+    
+            dx_packed = dx_array[0] + dx_array[1]
+            dx_unpacked = struct.unpack('h', dx_packed)
+            dx_read = dx_unpacked[0]
+            print('driver x:' + str(dx_read))
 
-                dy_packed = dy_array[0] + dy_array[1]
-                dy_unpacked = struct.unpack('h', dy_packed)
-                dy_read = dy_unpacked[0]
+            dy_packed = dy_array[0] + dy_array[1]
+            dy_unpacked = struct.unpack('h', dy_packed)
+            dy_read = dy_unpacked[0]
+            print('driver y:' + str(dy_read))
 
-                dz_packed = dz_array[0] + dz_array[1]
-                dz_unpacked = struct.unpack('h', dz_packed)
-                dz_read = dz_unpacked[0]/10.0 #divide by 10 since it was multiplied by 10 before being sent. 
-        
-                     
+            dz_packed = dz_array[0] + dz_array[1]
+            dz_unpacked = struct.unpack('h', dz_packed)
+            dz_read = dz_unpacked[0]/10.0 #divide by 10 since it was multiplied by 10 before being sent. 
+            print('driver z:' + str(dz_read))
+                 
     ########HUGE OVERHAUL FOR PARALLAX IS NEEDED#################### (Useless as it is now)
     #########SAVE FOR AFTER INTEGRATION???#########################
 
@@ -589,7 +757,7 @@ while True:
 ##        #print('Driver alpha: ' + str(alpha_D))
 ##        #print('Driver phi: ' + str(phi_D))
 
-    #flush the serial buffer
+    #flush the serial buffer to avoid falling really behind 
     ser.flush()
         
     #update FPS count
