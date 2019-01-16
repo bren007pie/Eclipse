@@ -128,7 +128,7 @@ class HeadTrackingThreaded:
 
             dist = self.distance(False) #does the ultrasonic distance measurement, True is the debug
               
-            eyecentres = None
+            eyecentres = []
             for (x,y,w,h) in faces: #if there are no faces this doesn't run
                 cv2.rectangle(img,(x,y),(x+w,y+h),(255,0,0),1) #draws the rectangle around the corners in blue to the image object
                 cv2.circle(img, (int(x+w/2),int(y+h/2)), 3, (255,0,0),2) #draws a blue circle of radius 3 in the centre of the face to the image object. Pixel reference need to be an integer
@@ -165,15 +165,27 @@ class HeadTrackingThreaded:
             #append z-distance to end of eyedist list
             self.eyedistance.append(dist)
 
-            #take the average of eye x positions
-            if eyecentres:    
+            #take the average of eye x positions and send driver info
+            if len(eyecentres) == 2:    
                 eye_x = (eyecentres[0][0] + eyecentres[1][0])/2
                 eye_y = (eyecentres[0][1] + eyecentres[1][1])/2
                 distx10 = dist*10 #multiply by 10 so less info is lost in sending
-                ser.write(struct.pack('h',3)) #start flag for driver location
-                ser.write(struct.pack('h',int(eye_x)))
-                ser.write(struct.pack('h',int(eye_y)))
-                ser.write(struct.pack('h',int(distx10))) #the signed short type ('h') can send up to to 2^15
+
+                #if currently not sending light info, send the driver info
+                if not SENDING_LIGHT:
+
+                    SENDING_DRIVER = True #set this flag to true to interrupt sending light info
+                    
+                    ser.write(struct.pack('h',3)) #start flag for driver location
+                    print(str(3))
+                    ser.write(struct.pack('h',int(eye_x)))
+                    print(str(eye_x))
+                    ser.write(struct.pack('h',int(eye_y)))
+                    print(str(eye_y))
+                    ser.write(struct.pack('h',int(distx10))) #the signed short type ('h') can send up to to 2^15
+                    print(str(distx10))
+
+                    SENDING_DRIVER = False #set back to false to free up light info
                 
             if self.stopped:
                 self.cap.release()
@@ -206,6 +218,7 @@ class HeadTrackingThreaded:
         return
 
     def distance(self,debug): #gets distance from the ultrasonic range finder
+        manualdist = 69
         if Uenable: #if ultrasonics are on   
             GPIO.output(GPIO_TRIGGER, True) # set Trigger to HIGH
             time.sleep(0.00001) # set Trigger after 0.01ms to LOW
@@ -309,6 +322,22 @@ class HeadTrackingThreaded:
         #Mario's way
         return eyedist
 
+#set up serial port
+ser = serial.Serial(
+    port='/dev/serial0',
+    baudrate = 9600, 
+    parity = serial.PARITY_NONE,#not ensuring accurate transmission
+    stopbits = serial.STOPBITS_ONE,
+    bytesize = serial.EIGHTBITS,
+    timeout = 1
+    )
+
+#Set up serial communication flags to make sure light and driver info
+#aren't sent at the same time!
+SENDING_LIGHT = False
+SENDING_DRIVER = False
+
+
 
 #set blob brightness threshold
 p_thresh = 150
@@ -320,15 +349,6 @@ size_thresh = 5
 x_res = 640
 y_res = 480
 
-#set up serial port
-ser = serial.Serial(
-    port='/dev/serial0',
-    baudrate = 9600, #max baudrate
-    parity = serial.PARITY_NONE,#not ensuring accurate transmission
-    stopbits = serial.STOPBITS_ONE,
-    bytesize = serial.EIGHTBITS,
-    timeout = 1
-    )
 
 #define lens characteristics (trained) for fisheye undistortion
 DIM=(640, 480)
@@ -351,18 +371,49 @@ def prep_undistort(frame, balance = 1, dim2=None, dim3=None):
     map1, map2 = cv2.fisheye.initUndistortRectifyMap(scaled_K, D, np.eye(3), new_K, dim3, cv2.CV_32FC1)
     return(map1, map2)
 
+def undistort(Xpoint,Ypoint):
+    #Take difference between rounded map1 and Xpoint
+    Xdiff = abs(round1-Xpoint)            
+    #Xmins is 2 arrays corresponding to the X and Y indices of closest match between Xpoint & Map1 
+    Xmins = np.where(Xdiff <= Xdiff.min() + 1)        
+    #list of values in map 2 corresponding to Xmins
+    Ypos = round2[Xmins[0],Xmins[1]]
+    #Take the difference between the list of matched Y positions and Ypoint
+    Ydiff = abs(Ypos-Ypoint)    
+    #Get the index of best match between Ypos and Ypoint
+    minidx = np.where(Ydiff == Ydiff.min())          
+    #Final indices for map1/map2
+    #These are the final undistorted x,y values of the light source. 
+    FinalX = Xmins[1][minidx][0]
+    FinalY = Xmins[0][minidx][0] #Y is inverted in terms of a normal x-y plane
+    #print FinalX, FinalY
+    return(FinalX,FinalY)
+
+def correctedAngleCalc(pixelX,pixelY):
+    pixelXMax = x_res - row_blk_right[pixelY] #in reality the maxes of these will depend on
+    pixelYMax = y_res - col_blk_top[pixelX] #the black bars
+    cal_depth = 0.5  #whatever depth it takes in calibration to fill the frame
+    cal_width = 1 #ex. width of windshield
+    cal_height = 0.5 #ex. height of windshield
+    alpha = math.degrees(math.atan((cal_width/2)*((pixelX-x_res/2)/(pixelXMax - x_res/2))/cal_depth))
+    phi = math.degrees(math.atan((cal_height/2)*((pixelY-y_res/2)/(pixelYMax - y_res/2))/cal_depth))
+    #print(str(alpha))
+    #print(str(phi))
+    return(alpha,phi)
+
+
 #define location of camera with respect to the windshield in full frame
-width = 139 #total width of windshield
-height = 71.5 #total height of windshield
-cam_perp_dist = 60 #perpendicular distance from camera to windshield in cm
-cam_spacing = 10
-cam_x_dist = width/2 - cam_spacing/2 #horizontal distance from left edge of windshield to camera
-#^ 65 cm corresponds to the left camera with a spacing of 10 cm between the two. 
-cam_y_dist = height/2 #camera should be centred vertically accoutning for the incline of the windshield
-x_centreline = width/2 #half of windshield width
-FOV = 2*math.atan((width-cam_x_dist)/cam_perp_dist)*180/math.pi #total field of view of the camera in radians
-driver_dist = 20 #horizontal distance from driver to left camera
-driver_h = 40 #vertical distance (height) of driver above cameras
+##width = 139 #total width of windshield
+##height = 71.5 #total height of windshield
+##cam_perp_dist = 60 #perpendicular distance from camera to windshield in cm
+##cam_spacing = 10
+##cam_x_dist = width/2 - cam_spacing/2 #horizontal distance from left edge of windshield to camera
+###^ 65 cm corresponds to the left camera with a spacing of 10 cm between the two. 
+##cam_y_dist = height/2 #camera should be centred vertically accoutning for the incline of the windshield
+##x_centreline = width/2 #half of windshield width
+##FOV = 2*math.atan((width-cam_x_dist)/cam_perp_dist)*180/math.pi #total field of view of the camera in radians
+##driver_dist = 20 #horizontal distance from driver to left camera
+##driver_h = 40 #vertical distance (height) of driver above cameras
 
 #start objects from other Classes
 vs = PiCamThreaded().start()
@@ -405,33 +456,13 @@ for i in range(x_res):
 
 #loop until user quits
 #increment = 0
-while True:
-    
-    #######################Head tracking copy paste ends#########################
-
-    #update sunlight sensor inputs (vis, IR, UV)
-    #(vis,IR,UV) = readSunLight()
-    #test prints
-    #print('Vis:' + str(vis))
-    #print('IR:' + str(IR))
-    #print('UV:' + str(UV))
-
-          
-    #set camera exposure according to sensor inputs
-    #increment = increment + 1
-    #if IR < 300:
-    #    vs.changeShutter(int(500*math.pow(1.1,increment)))
-    #elif IR < 600:
-        #vs.changeShutter(500)
-    #don't need an else case because exposure should be set to 500 as IR
-    #climbs past 600
-        
+while True:      
     #grab frame
     frame = vs.read()#already an array
 
     #flip in x and y
-    frame = cv2.flip(frame,0)
-    frame = cv2.flip(frame,1)
+    #frame = cv2.flip(frame,0)
+    #frame = cv2.flip(frame,1)
     
     #convert image to grayscale
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -480,66 +511,50 @@ while True:
     #reset lists to store alpha,phi for multiple lights.
     alpha = []
     phi = []
-    light_num = 0 #reset light num
+    
     #loop over the contours
-    for(i, c) in enumerate(conts):
-        light_num = light_num + 1
+    for(i, c) in enumerate(conts):       
         #draw bright spot on the image
         #(x, y, w, h) = cv2.boundingRect(c)
         ((cX,cY), radius) = cv2.minEnclosingCircle(c)
         
-        #Location of lightsource in raw/distorted image
-        Xpoint = cX
-        Ypoint = cY
+        #if currently not sending driver info
+        if not SENDING_DRIVER:
 
-        ser.write(struct.pack('h',light_num)) #signal bit for light num
-        #write the x,y positions of each light to serial
-        ser.write(struct.pack('h',int(cX)))
-        ser.write(struct.pack('h',int(cY)))        
+            SENDING_LIGHT = True #raise this flag to prevent sending driver info
 
-        #Take difference between rounded map1 and Xpoint
-        Xdiff = abs(round1-Xpoint)
-                
-        #Xmins is 2 arrays corresponding to the X and Y indices of closest match between Xpoint & Map1 
-        Xmins = np.where(Xdiff <= Xdiff.min() + 1)        
-               
-        #list of values in map 2 corresponding to Xmins
-        Ypos = round2[Xmins[0],Xmins[1]]
+            ser.write(struct.pack('h',i+1)) #signal light number
+            #write the x,y positions of each light to serial
+
+            x_tosend = struct.pack('h',int(cX))
+            ser.write(x_tosend)
+            #print('packed x sent: ' + str(x_tosend))
+            #print('raw x val: ' + str(int(cX)))
+            #print('unpacked x: ' + str(struct.unpack('h',x_tosend)))
+                  
+            y_tosend = struct.pack('h',int(cY)) 
+            ser.write(y_tosend)
+            #print('raw y val: ' + str(int(cY)))
+            #print('unpacked y: ' + str(struct.unpack('h',y_tosend)[0]))
+            
+            SENDING_LIGHT = False #set back down to free up driver info
         
-        #Take the difference between the list of matched Y positions and Ypoint
-        Ydiff = abs(Ypos-Ypoint)
-        
-        #Get the index of best match between Ypos and Ypoint
-        minidx = np.where(Ydiff == Ydiff.min())
+        (FinalX,FinalY) = undistort(cX,cY)
 
-              
-        #Final indices for map1/map2
-        #These are the final undistorted x,y values of the light source. 
-        FinalX = Xmins[1][minidx][0]
-        FinalY = Xmins[0][minidx][0] #Y is inverted in terms of a normal x-y plane
-        #print FinalX, FinalY
-
-        #shift final_x and final_y for angle calculations
-        x_shifted = FinalX - row_blk_right[FinalY] - 60 #-60 is the calibration factor for windshield not being exactly in frame
-        #air gap of size approx 50 at left edge
-
-        #this one has air gap on bottom AND top, ALSO y is inverted!
-        y_shifted = FinalY - col_blk_top[FinalX] - 55  #-55 also calib factor
-
-        x_windshield = x_shifted/(x_res-row_blk_left[FinalY]-row_blk_right[FinalY]-60)*width #these also have the calib factor
-        #crop bottom and top air gaps and convert to cm. #55 is top gap, 29 is bottom
-        y_windshield = y_shifted/(y_res-col_blk_top[FinalX]-col_blk_bot[FinalX] -55-35)*height
-      
+        #(x_windshield,y_windshield) = shift(FinalX,FinalY)
+           
         #Convert adjust windshield locations to angle with respect to the camera's normal
         #position on windshield
         #Also convert angles to degrees
-        alpha.append(math.atan((x_windshield-cam_x_dist)/cam_perp_dist)*180/math.pi)
-        phi.append(-math.atan((y_windshield-cam_y_dist)/cam_perp_dist)*180/math.pi) #has a negative sign to account for inverted FinalY
+        (temp_alpha,temp_phi) = correctedAngleCalc(FinalX,FinalY)
+        alpha.append(temp_alpha)
+        phi.append(temp_phi)
         
         #print angles for current light
         #print(str(row_blk_left[int(FinalY)]))
         print('alpha ' + str(i+1) + ': ' + str(alpha[i]))
         print('phi: ' + str(i+1) + ': ' + str(phi[i]))
+
        
         #for getting the angle with respect to the driver using data from both cameras,
         #need to make sure that the two pairs of angles being worked are the right match.
