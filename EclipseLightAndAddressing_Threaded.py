@@ -435,7 +435,7 @@ for i in range(x_res):
     col_blk_top.append(len(np.where(map2[:,i] > y_res)[0]))
 
 #####DEBUGGING############
-correctedAngleCalc(0,240)
+correctedAngleCalc(0,479)
 #naiveAngleCalc(160,240)
 ##########################
 
