@@ -118,26 +118,32 @@ class GridAddressing:
 
     def update(self):
         #global alpha_other
-                
+        prev_x1 = None
         while True:
              #constants and variables
-            xCam1 = 35
-            yCam2 = 35
+            xCam1 = 55
+            yCam2 = 50
             dSensorToWindshield = 20
             acceptableError = 3
 
             #outputs from Light Tracking (in deg)
 
-            if alpha_other[0] and phi[0]:
-                alpha1 = alpha_other[0] #-10
-                phi1 = phi[0] #0#
+            if alpha_other[0]:
+                alpha1 = alpha_other[0]#alpha_other[0] #-10
+                phi1 = -15#phi[0] #-15#
+                #print(str(phi[0]))
                 alpha2 = None#60
                 phi2 = None #0
+            else:
+                alpha1 = None
+                phi1 = None
+                alpha2 = None
+                phi2 = None
 
             #outputs from Driver Tracking (in cm)
             horizontalDisplacement = 0
             verticalDisplacement = 0
-            depthSensorToDriver = 20
+            depthSensorToDriver = 50
 
             x1 = y1 = x2 = y2 = x3 = y3 = x4 = y4 = None
             
@@ -145,7 +151,7 @@ class GridAddressing:
             xDriver = xCam1 + horizontalDisplacement
             yDriver = yCam2 + verticalDisplacement
             
-            if type(alpha_other[0]) != type(None):
+            if type(alpha1) != type(None):
                 xProjection1 = dDriver*math.tan(math.radians(alpha1)) + xDriver
                 yProjection1 = dDriver*math.tan(math.radians(phi1)) + yDriver
                 
@@ -173,20 +179,30 @@ class GridAddressing:
             if type(x1) != type(None):
                 if y1 == 1:
                     GPIO.output(self.bottomRowPins[x1],1)
+                    
+                    if prev_x1 != x1 and type(prev_x1) != type(None):
+                        GPIO.output(self.bottomRowPins[prev_x1],0)
+                        
                 elif y1 == 2:
                     GPIO.output(self.topRowPins[x1],1)
+                    if prev_x1 != x1 and type(prev_x1) != type(None):
+                        GPIO.output(self.topRowPins[prev_x1],0)
+                        
                     
                 if type(x2) != type(None):
                     if y1 == 1:
                         GPIO.output(self.bottomRowPins[x2],1)
+                        ##MISSING CLEARING PREVIOUS TILE
                     elif y1 == 2:
                         GPIO.output(self.topRowPins[x2],1)
-                
+
             else:
                 GPIO.output(self.bottomRowPins,0)
                 GPIO.output(self.topRowPins,0)
-                
 
+            prev_x1 = x1
+                
+            
         return
 
 
@@ -258,11 +274,11 @@ def undistort(Xpoint, Ypoint):
 def correctedAngleCalc(pixelX,pixelY):
     pixelXMax = x_res - row_blk_right[pixelY] #in reality the maxes of these will depend on
     pixelYMax = y_res - col_blk_top[pixelX] #the black bars
-    cal_depth = 0.5  #whatever depth it takes in calibration to fill the frame
+    cal_depth = 0.45  #whatever depth it takes in calibration to fill the frame
     cal_width = 1 #ex. width of windshield
-    cal_height = 0.5 #ex. height of windshield
+    cal_height = 0.65 #ex. height of windshield
     alpha = math.degrees(math.atan((cal_width/2)*((pixelX-x_res/2)/(pixelXMax - x_res/2))/cal_depth))
-    phi = math.degrees(math.atan((cal_height/2)*((pixelY-y_res/2)/(pixelYMax - y_res/2))/cal_depth))
+    phi = -math.degrees(math.atan((cal_height/2)*((pixelY-y_res/2)/(pixelYMax - y_res/2))/cal_depth))
     #print(str(alpha))
     #print(str(phi))
     return(alpha,phi)
@@ -367,8 +383,8 @@ while True:
     frame = vs.read()#already an array
 
     #flip in x and y
-    frame = cv2.flip(frame,0)
-    frame = cv2.flip(frame,1)
+    #frame = cv2.flip(frame,0)
+    #frame = cv2.flip(frame,1)
     
     #convert image to grayscale
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -475,10 +491,10 @@ while True:
         flag_unpacked = struct.unpack('h', flag_packed)
         flag = int(flag_unpacked[0])
 
-        print('read something: ' + str(flag))
+        #print('read something: ' + str(flag))
         #print('translated: ' +str(ord(flag)))
         if  flag == 1:
-            print('read 1')
+            #print('read 1')
             #save current read value so it's not lost somehow after checking it
             #if ord(current_read) != 1: #good chance that don't actually need to wait for this to happen
             x1_array = []
@@ -513,8 +529,8 @@ while True:
             alpha_other[0] = temp_alpha
             phi_other[0] = temp_phi
 
-            print('other x 1: ' + str(x1_read))
-            print('other y 1: ' + str(y1_read))
+            #print('other x 1: ' + str(x1_read))
+            #print('other y 1: ' + str(y1_read))
             print('other alpha 1: ' + str(alpha_other[0]))
             print('other phi 1: ' + str(phi_other[0]))
             

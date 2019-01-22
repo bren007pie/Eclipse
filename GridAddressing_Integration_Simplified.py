@@ -14,21 +14,21 @@ bottomRowPins = channels[:7]
 topRowPins = channels[7:]
 
 #constants and variables
-xCam1 = 35
-yCam2 = 35
+xCam1 = 50
+yCam2 = 50
 dSensorToWindshield = 20
 acceptableError = 3
 
 #outputs from Light Tracking (in deg)
-alpha1 = -10
-phi1 = 0
-alpha2 = 60
-phi2 = 0
+alpha1 = -40
+phi1 = -15
+alpha2 = None
+phi2 = None
 
 #outputs from Driver Tracking (in cm)
 horizontalDisplacement = 0
 verticalDisplacement = 0
-depthSensorToDriver = 20
+depthSensorToDriver = 60
 
 #loop
 while 1:
