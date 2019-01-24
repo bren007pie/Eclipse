@@ -1,4 +1,7 @@
-#sourced from: https://www.instructables.com/id/Face-and-Eye-Detection-With-Raspberry-Pi-Zero-and-/
+#Purpose: This is the main code for head tracking for the Eclipse Blocking System.
+#Author: Brendan Fallon 
+#Date: Dec 2018
+
 
 #if getting an error run:
 #sudo modprobe bcm2835-v4l2
@@ -12,11 +15,13 @@ from imutils.video import FPS
 #Ultrasonic imports
 import RPi.GPIO as GPIO
 import time
-from threading import Timer
+#from threading import Timer
 import math as m
+#doesn't make much sense to have a headtracking functions file as things are mostly setup as global variables and such
 
 #global variable setup
 #Sets up Camera and OpenCV and FPS
+cv2.setNumThreads(0) #this bad boi gets rid of multithreading 
 os.chdir("/usr/local/share/OpenCV/haarcascades/")
 face_cascade = cv2.CascadeClassifier('/usr/local/share/OpenCV/haarcascades/haarcascade_frontalface_default.xml')
 eye_cascade = cv2.CascadeClassifier('/usr/local/share/OpenCV/haarcascades/haarcascade_eye.xml')
@@ -29,13 +34,17 @@ cap = cv2.VideoCapture("/dev/video0") #sets up video capture, video1 is the webc
     #CAP_PROP_AUTO_EXPOSURE ?
     #no exposure, no monochrome, iso speed
     #Sets the camera height to 720p
-    ##cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    ##cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 480)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 320)
 
 campixelwidth = cap.get(3) #cv2.CAP_PROP_FRAME_WIDTH
 print("Pixel width:\n", campixelwidth)
 campixelheight = cap.get(4)  #cv2.CAP_PROP_FRAME_HEIGHT
 print("Pixel height:\n", campixelheight)
+
+
 
 #My Global variables
 symthresh = 5 #pixel distance away from average of symetry threshold for eye filtering
@@ -44,25 +53,9 @@ framebufferlen = 5 #maybe can just make this bigger and not take the average but
 areathreshold = 5 #radius in pixels of the acceptable into accept
 
 #Objects
-class Watchdog: #watchdog timer to stop the program if ultrasonics are not hooked up
-    def __init__(self, timeout, userHandler=None):  # timeout in seconds
-        self.timeout = timeout
-        self.handler = userHandler if userHandler is not None else self.defaultHandler
-        self.timer = Timer(self.timeout, self.handler)
-        self.timer.start()
+#watchdog timer removed 
 
-    def reset(self):
-        self.timer.cancel()
-        self.timer = Timer(self.timeout, self.handler)
-        self.timer.start()
-
-    def stop(self):
-        self.timer.cancel()
-
-    def defaultHandler(self):
-        raise self
-
-#Setup Functions
+#Ultrasonic Functions - need to be in code for 
 
 def ultrasonicsetup(enable,manualdistance): #setups up ultrasonic range finder, if enable is false it doesn't run
     global Uenable, GPIO_TRIGGER, GPIO_ECHO, manualdist  #setups a global variables. Uenable that stops all ultrasonic stuff
@@ -77,14 +70,6 @@ def ultrasonicsetup(enable,manualdistance): #setups up ultrasonic range finder, 
         #set GPIO direction (IN / OUT)
         GPIO.setup(GPIO_TRIGGER, GPIO.OUT)
         GPIO.setup(GPIO_ECHO, GPIO.IN)
-##        try:
-##            watchdog = Watchdog(5) #watchdog timer waits 2 seconds
-##            distance()
-##            print("Ultrasonic Sensor is hooked up!")
-##        except:
-##            print("Waited too long, No Ultrasonic sensor detected")
-##            Uenable = False #disables all ultrasonic stuff
-##        watchdog.stop()
     return
 
 def distance(debug): #gets distance from the ultrasonic range finder
@@ -204,134 +189,50 @@ def geteyedistance(eyecentres, dist, debug):
     #Mario's way
     return eyedist
 
-def deleteeyesbelowcentre(numeyes,eyecentres,facecentre,eyes):
-    #Filtering out eyes below the centre of the face, should be a function. why doesn't this do this already?
-    j = 0 #accumulator for how many eyes deleted, has to index shift for deleted one
-    for i in range(numeyes):
-        if eyecentres[i][1] > facecentre[1]: #if the eye is below the face centre (greater than because negatively indexed)
-            #print("Eye", i , "below nose! Going to be Deleted!")
-            #print("Eyes",eyes)
-            #print(eyecentres[i][1]) prints the value it deletes
-            cv2.circle(img, (int(eyecentres[i][0]),int(eyecentres[i][1]) ), 2, (0,0,0),3) #draws the eye to be deleted in black
-            eyes = np.delete(eyes,(i-j),0) #deletes the eye it detects is bad
-            j = j + 1 
-            print("Eye", i , "below nose! Deleted!", "j =",j)
-    return eyes
-
 
 #program start
 
 
-ultrasonicsetup(True,0) #True if ultrasonic is hooked up, false if otherwise
+ultrasonicsetup(False,40) #True if ultrasonic is hooked up, false if otherwise
 fps = FPS().start() #defines the FPS object
 testIRled()
 #debug = (Distance, eye array,etc)
 #debug (1,0,1,0,1)
-
-
 
 #main loop
 
 while 1:
     ret, img = cap.read() #reads in the image
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) #converts to grayscale
-    faces = face_cascade.detectMultiScale(gray, 1.3, 5) #detects faces in the grayscale image
-
+    faces = face_cascade.detectMultiScale(gray, 1.6, 5,0,(60, 60)) #detects faces in the grayscale image
+    #parameters to detectMultiScale: image, scalefactor (image size reduction), minNeighbours, flags, minSize
 
     print("I START")
     dist = distance(False) #does the ultrasonic distance measurement, True is the debug
-    
-    
-    
+      
 
     for (x,y,w,h) in faces: #if there are no faces this doesn't run
         cv2.rectangle(img,(x,y),(x+w,y+h),(255,0,0),1) #draws the rectangle around the corners in blue to the image object
         cv2.circle(img, (int(x+w/2),int(y+h/2)), 3, (255,0,0),2) #draws a blue circle of radius 3 in the centre of the face to the image object. Pixel reference need to be an integer
-        roi_gray = gray[y:y+h, x:x+w]
-        roi_color = img[y:y+h, x:x+w]
+        roi_gray = gray[y:int(y+h/2), x:x+w] #defines a new region to search for eyes in the top half of the face
+        roi_color = img[y:int(y+h/2), x:x+w]
 
         facecentre = getfacecentre(faces,False) #debug prints out face info
-
-        eyes = eye_cascade.detectMultiScale(roi_gray) #detects the eyes
-
-        numeyes = getnumeyes(eyes,False) 
-
         
+        eyes = eye_cascade.detectMultiScale(roi_gray) #detects the eyes within the face
 
-
-##
-##        #finding the number of eyes, should also just be a function
-##        print("Eye array: \n", eyes)
-##        
-##
-##        #print("Framebuff:\n", framebuffer )
-##        #gets the average of the last frames buffer before it's rolled over/updated. Should be a function. Consider not using an average? Idk what method would be better. Maybe threshold via variance?
-##        if len(framebuffer) == framebufferlen: #checks to make sure the frame buffer is full
-##            avgeyex = 0 #the average x location of the eye, reinitalized to 0
-##            avgeyey = 0 #the average y location of the eye, reinitializes to 0
-##            bufeyenum = 0
-##            for i in range(framebufferlen): #itterates through the frame buffer to get average. range(x) goes through 0,1,2..,(x-1)
-##                for j in range(len(framebuffer[i])):
-##                    avgeyex = avgeyex + float(framebuffer[i][j][0]) #sums up all the eyecentre xs, is a triple nested list, remember index from 0, can't acess these until buffer has at least 1 element!
-##                    avgeyey = avgeyey + float(framebuffer[i][j][1]) #sums up all the eyecentre ys,  is a triple nested list, remember index from 0, can't acess these until buffer has at least 1 element!
-##                    bufeyenum = bufeyenum + 1
-##            avgeyex = avgeyex/bufeyenum
-##            avgeyey = avgeyey/bufeyenum
-##            print("Average x location: \n", avgeyex)
-##            print("Average y location: \n", avgeyey)
-##
-##
-##        #updates a rolling framebufferlen long buffer of detected eyes to check check
-##        framebuffer.append(eyecentres)
-##        if len(framebuffer) > framebufferlen: #lengh of the frame buffer detected by the top most arrays
-##            framebuffer.pop(0) #pops off the left most index to make a rolling buffer
-
+        numeyes = getnumeyes(eyes,False)      
         eyecentres = geteyecentres(eyes,False)
-
-        eyes = deleteeyesbelowcentre(numeyes,eyecentres,facecentre,eyes) #overrites eyes with the deleted ones
-
-
-        #needs to update the number of eyes after they are deleted
-        numeyes = getnumeyes(eyes,False)
-        
-##        #looks for symetric eyes and filters out eranous ones. Takes distance, then average, then deletes one not within 5 of average
-##        eyedevs = []
-##        eyeavg = 0
-##        for i in range(numeyes):
-##            eyedev = float(abs(eyecentres[i][0] - facecentre[0]))
-##            print("Eye Deviation:\n", eyedev)
-##            eyedevs.append(eyedev)
-##            eveavg = eyeavg + float(eyedev)
-##            print("Eye average:\n", eyeavg, type(eyeavg), type(eyedev))
-##        eyeavg = sum(eyedevs/numeyes
-##        print("Eye D6e9viations:\n", eyedevs)
-##        print("Eye average deviation:\n", eyeavg)
-##        for i in range(numeyes):
-##            if abs(eyedevs[i] - eyeavg) > symthresh:
-##                cv2.circle(img, (int(eyecentres[i][0]),int(eyecentres[i][1]) ), 2, (0,0,255),3) #draws the eye to be deleted in red
-##                eyes = np.delete(eyes,i,0) #deletes the eye it detects is bad
-##                i = i-1 #this reshifts the index so you don't run into indexing errors after deleting
-##                print("Eye", i+1 , "not symetric about face! Deleted!")
-##                numeyes = int(eyes.size/4) #updates number of eyes
-##
-##
-##
-##        print("Eye Deviations:\n",eyedevs)
-
-
-        #facecentre[0] x position
-
+    
         #cuts the number of eyes down to 2 "randomly"
         while numeyes > 2:
             eyes = np.delete(eyes,2,0) #deletes the eye at index 2, or the 3rd eye
             numeyes = int(eyes.size/4)
 
         eyecentres = geteyecentres(eyes,False)
-
-
         eyedistance = geteyedistance(eyecentres, dist, True)
         
-        for (ex,ey,ew,eh) in eyes: #writes all the circtles
+        for (ex,ey,ew,eh) in eyes: #writes all the circles
             cv2.rectangle(roi_color,(ex,ey),(ex+ew,ey+eh),(0,255,0),1)
             cv2.circle(img, (int(x+ex+ew/2),int(y+ey+eh/2)), 2, (0,255,0),1) #draws a green circle of radius 2 in the centre of the eye to the image object. Pixel reference need to be an integer.
             #all eye dimensions are with reference to the face so need to add the face coord to each one
@@ -350,16 +251,14 @@ while 1:
     fps.update() #updates the fps object each time the detection runs
 
 
-
-
-
-    fps.update() #updates the fps object each time the detection runs
-
 fps.stop() #stops the fps counting
 print("[INFO] approx FPS: {:.2f}".format(fps.fps()))
 #cleans up
 cap.release()
 cv2.destroyAllWindows()
+
+###Notes
+#sourced from: https://www.instructables.com/id/Face-and-Eye-Detection-With-Raspberry-Pi-Zero-and-/
 
 #if getting an error run:
 #sudo modprobe bcm2835-v4l2
