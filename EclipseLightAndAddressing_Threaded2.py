@@ -321,6 +321,7 @@ class HeadTrackingThreaded:
                 eye_y = (eyedist[0][1] + eyedist[1][1])/2
                 print('eye_x: ' + str(eye_x))
                 print('eye_y: ' + str(eye_y))
+                #LOL I changed this
 
                 
             if self.stopped:
