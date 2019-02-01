@@ -128,12 +128,11 @@ class GridAddressing:
 
             #outputs from Light Tracking (in deg)
 
-            if alpha_other[0]:
-                alpha1 = alpha_other[0]#alpha_other[0] #-10
-                phi1 = -15#phi[0] #-15#
-                #print(str(phi[0]))
-                alpha2 = None#60
-                phi2 = None #0
+            if alpha[0]:
+                alpha1 = alpha[0]#alpha_other[0] #-10
+                phi1 = -15+ phi[0]#phi[0] #-15#
+                alpha2 = alpha[1]#None#60
+                phi2 = phi[1]#None #0
             else:
                 alpha1 = None
                 phi1 = None
@@ -141,9 +140,9 @@ class GridAddressing:
                 phi2 = None
 
             #outputs from Driver Tracking (in cm)
-            horizontalDisplacement = 0
-            verticalDisplacement = 0
-            depthSensorToDriver = 50
+            horizontalDisplacement = eye_x
+            verticalDisplacement = eye_y
+            depthSensorToDriver = 50 #d_dist
 
             x1 = y1 = x2 = y2 = x3 = y3 = x4 = y4 = None
             
@@ -182,26 +181,51 @@ class GridAddressing:
                     
                     if prev_x1 != x1 and type(prev_x1) != type(None):
                         GPIO.output(self.bottomRowPins[prev_x1],0)
+                    if prev_y1 != y1 and type(prev_y1) != type(None):
+                        GPIO.output(self.topRowPins[prev_x1],0)
                         
                 elif y1 == 2:
                     GPIO.output(self.topRowPins[x1],1)
+                    
                     if prev_x1 != x1 and type(prev_x1) != type(None):
                         GPIO.output(self.topRowPins[prev_x1],0)
+                    if prev_y1 != y1 and type(prev_y1) != type(None):
+                        GPIO.output(self.bottomRowPins[prev_x1],0)
                         
                     
-                if type(x2) != type(None):
-                    if y1 == 1:
+                if type(x2) != type(None): #second light!
+                    if y2 == 1:
                         GPIO.output(self.bottomRowPins[x2],1)
-                        ##MISSING CLEARING PREVIOUS TILE
-                    elif y1 == 2:
+
+                        if prev_x2 != x2 and type(prev_x2) != type(None):
+                            GPIO.output(self.bottomRowPins[prev_x2],0)
+                        if prev_y2 != y2 and type(prev_y2) != type(None):
+                            GPIO.output(self.topRowPins[prev_y2],0)
+                      
+                    elif y2 == 2:
                         GPIO.output(self.topRowPins[x2],1)
 
+                        if prev_x2 != x2 and type(prev_x2) != type(None):
+                            GPIO.output(self.topRowPins[prev_x2],0)
+                        if prev_y2 != y2 and type(prev_y2) != type(None):
+                            GPIO.output(self.bottomRowPins[prev_y2],0)
+
+                #else:
+                #    print('ha ha')
+                #    if y2 == 1:
+                #        GPIO.output(self.bottomRowPins[prev_x2],0)
+                #    elif y2 == 2:
+                #        GPIO.output(self.topRowPins[prev_x2],0)
+                    
             else:
                 GPIO.output(self.bottomRowPins,0)
                 GPIO.output(self.topRowPins,0)
 
+            #save the most recent value of x1 before it changes
             prev_x1 = x1
-                
+            prev_y1 = y1
+            prev_x2 = x2
+            prev_y2 = y2   
             
         return
 
@@ -209,6 +233,231 @@ class GridAddressing:
     def stop(self):
         self.stopped = True
         GPIO.cleanup()
+
+
+
+class HeadTrackingThreaded:
+
+    def __init__(self):
+    
+        cv2.setNumThreads(0)#restrict opencv functions to one thread
+        os.chdir("/usr/local/share/OpenCV/haarcascades/")
+        self.face_cascade = cv2.CascadeClassifier('/usr/local/share/OpenCV/haarcascades/haarcascade_frontalface_default.xml')
+        self.eye_cascade = cv2.CascadeClassifier('/usr/local/share/OpenCV/haarcascades/haarcascade_eye.xml')
+        self.cap = cv2.VideoCapture("/dev/video0") #sets up video capture, video1 is the webcam, video0 is the picam
+        #camera has atributes set by cap.set(cv2.CAP_PROP_EXPOSURE, 40) #Reference: https://docs.opencv.org/trunk/d4/d15/group__videoio__flags__base.html#gaeb8dd9c89c10a5c63c139bf7c4f5704d
+        #CAP_PROP_BRIGHTNESS
+        #CAP_PROP_CONTRAST
+        #CAP_PROP_SATURATION
+        #CAP_PROP_GAIN
+        #CAP_PROP_AUTO_EXPOSURE ?
+        #no exposure, no monochrome, iso speed
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 480)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 320)
+        self.campixelwidth = self.cap.get(3) #cv2.CAP_PROP_FRAME_WIDTH
+        self.campixelheight = self.cap.get(4)  #cv2.CAP_PROP_FRAME_HEIGHT
+
+        self.ultrasonicsetup(False,40) #True if ultrasonic is hooked up, false if otherwise
+        self.eyedistance= []
+        self.stopped = False
+
+    def start(self):
+        t = Thread(target = self.update, args=())
+        t.daemon = True
+        t.start()
+        return self
+
+    def update(self):
+        while True:
+            ret, img = self.cap.read() #reads in the image
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) #converts to grayscale
+            faces = self.face_cascade.detectMultiScale(gray, 1.3, 5,0,(60, 60)) #detects faces in the grayscale image
+            #parameters to detectMultiScale: image, scalefactor (image size reduction), minNeighbours, flags, minSize
+
+            d_dist = self.distance(False) #does the ultrasonic distance measurement, True is the debug
+              
+            eyecentres = []
+            for (x,y,w,h) in faces: #if there are no faces this doesn't run
+                cv2.rectangle(img,(x,y),(x+w,y+h),(255,0,0),1) #draws the rectangle around the corners in blue to the image object
+                cv2.circle(img, (int(x+w/2),int(y+h/2)), 3, (255,0,0),2) #draws a blue circle of radius 3 in the centre of the face to the image object. Pixel reference need to be an integer
+                roi_gray = gray[y:int(y+h/2), x:x+w] #defines a new region to search for eyes in the top half of the face
+                roi_color = img[y:int(y+h/2), x:x+w]
+
+                facecentre = self.getfacecentre(faces,False) #debug prints out face info
+                
+                eyes = self.eye_cascade.detectMultiScale(roi_gray) #detects the eyes within the face
+
+                numeyes = self.getnumeyes(eyes,False)      
+            
+                #cuts the number of eyes down to 2 "randomly"
+                while numeyes > 2:
+                    eyes = np.delete(eyes,2,0) #deletes the eye at index 2, or the 3rd eye
+                    numeyes = int(eyes.size/4)
+
+                eyecentres = self.geteyecentres(eyes,x,y,False)
+                self.eyedistance = self.geteyedistance(eyecentres, d_dist, False)
+                
+                for (ex,ey,ew,eh) in eyes: #writes all the circles
+                    cv2.rectangle(roi_color,(ex,ey),(ex+ew,ey+eh),(0,255,0),1)
+                    cv2.circle(img, (int(x+ex+ew/2),int(y+ey+eh/2)), 2, (0,255,0),1) #draws a green circle of radius 2 in the centre of the eye to the image object. Pixel reference need to be an integer.
+                    #all eye dimensions are with reference to the face so need to add the face coord to each one
+                    ###print("Eye Position:",(x+ex+ew/2, y+ey+eh/2,"%.1f cm" % dist)) #prints the middle of the eye location
+
+
+            cv2.imshow('img',img) #img reference is 0,0 in top left
+            key = cv2.waitKey(1) & 0xFF
+            #if the 'q' key was pressed then break the loop
+            if key == ord("q"):
+                break
+
+            #append z-distance to end of eyedist list
+            self.eyedistance.append(d_dist)
+
+            #take the average of eye x positions and send driver info
+            if len(eyecentres) == 2:
+                eyedist = self.geteyedistance(eyecentres,d_dist,True)
+                
+                eye_x = (eyedist[0][0] + eyedist[1][0])/2
+                eye_y = (eyedist[0][1] + eyedist[1][1])/2
+                print('eye_x: ' + str(eye_x))
+                print('eye_y: ' + str(eye_y))
+
+                
+            if self.stopped:
+                self.cap.release()
+                return
+
+        return 
+        
+         
+
+    def read(self):
+        #output key head tracking information for the main body of the program to use
+        return self.eyedistance
+
+    def stop(self):
+        self.stopped = True
+
+    def ultrasonicsetup(self,enable,manualdistance): #setups up ultrasonic range finder, if enable is false it doesn't run
+        global Uenable, GPIO_TRIGGER, GPIO_ECHO, manualdist  #setups a global variables. Uenable that stops all ultrasonic stuff
+        Uenable = enable
+        manualdist = manualdistance
+        if enable:
+            GPIO.setwarnings(False) #This disables the warning about channel being in use
+            GPIO.setmode(GPIO.BCM) #GPIO Mode (BOARD or BCM)
+            #set GPIO Pins
+            GPIO_TRIGGER = 18
+            GPIO_ECHO = 24
+            #set GPIO direction (IN / OUT)
+            GPIO.setup(GPIO_TRIGGER, GPIO.OUT)
+            GPIO.setup(GPIO_ECHO, GPIO.IN)
+        return
+
+    def distance(self,debug): #gets distance from the ultrasonic range finder
+        manualdist = 69
+        if Uenable: #if ultrasonics are on   
+            GPIO.output(GPIO_TRIGGER, True) # set Trigger to HIGH
+            time.sleep(0.00001) # set Trigger after 0.01ms to LOW
+            GPIO.output(GPIO_TRIGGER, False)
+            StartTime = time.time()#setup up the time objects
+            StopTime = time.time()
+            while GPIO.input(GPIO_ECHO) == 0: # save StartTime, these while loops make it pause if not hooked up
+                StartTime = time.time()
+            while GPIO.input(GPIO_ECHO) == 1: # save time of arrival
+                StopTime = time.time()
+            TimeElapsed = StopTime - StartTime # time difference between start and arrival
+            distance = (TimeElapsed * 34300) / 2 # multiply with the sonic speed (34300 cm/s) and divide by 2, because there and back
+        elif (Uenable == False) and (manualdist == 0):
+            distance = -1 #-1 used to indicate ultrasonic sensor is not on or can fill with a set value in cm can still work
+        else:
+            distance = manualdist
+        
+        if debug:
+            print("Distance:\n", distance)
+        return distance
+   
+    def waitfor1face(self,faces): #limiting to 1 face makes it infinite loop for some reason, 
+        numfaces = int(faces.size/4)
+        while numfaces > 1: #stops the program until there is only 1 face in the frame
+            print("Please try to make there only be 1 face")
+            faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+            numfaces = int(faces.size/4)
+        return
+
+    def getfacecentre(self,faces,debug): #gets centre of the face and returns it as an x and y list
+        try: #error checking if there were no faces detected
+            centres = [float(faces[0][0] + faces[0][2]/2), float(faces[0][1]+ faces[0][3]/2)] #gets x and y of face centre
+            if debug:
+                print("Face array:\n", faces) #prints the contents of the faces arrays
+                #print("Number faces:\n", numfaces) #not a thing anymore
+                print("Face centre:\n", centres)
+        except IndexError:
+            centres=[[0,0]]
+            print("No faces detected! Set to 0,0")
+
+        return centres
+
+    def geteyecentres(self,eyes,x,y, debug): #Getting the Eye Centres makes an array (should just make this a function)
+        
+        centres = [] #empty list, defined each time
+        for (ex,ey,ew,eh) in eyes:
+            centres.append([x+ex+ew/2, y+ey+eh/2])
+        if debug:
+            print("EyeCentres:\n", centres)
+
+        return centres
+
+    def getnumeyes(self,eyes,debug):
+        try: #error checking if there is no eyes detected
+            num = int(eyes.size/4) #finds the number of eyes, is a numpy.ndarray, getting the number of ellements and dividing by 4
+            if debug:
+                print(num, " eyes detected")
+        except AttributeError:
+            num = -1
+            print("no faces detected! Set to -1!")
+        return num
+
+    def geteyedistance(self,eyecentres, dist, debug):
+        #FOV 60 degrees (assume both directions but test) #https://support.logitech.com/en_us/article/17556
+        #example eyecentres
+        #eyecentres = [[100, 300], [200,300]] #left and right eye
+        #dist = 20 #person is 20 cm away
+        #resolution = 1280 in x 720 in y
+        #FOV 60 degrees (assume both directions but test) #https://support.logitech.com/en_us/article/17556
+
+        #My way
+        eyedist = []
+        FOVx = 42.6*math.pi/180 #FOV in degrees determined experimentall, converts FOV in radians
+        thetax = FOVx/2
+        Resolutionx = self.campixelwidth 
+        objectplanex = dist*math.tan(thetax) #gets half the distance of the frame
+        mapx = objectplanex*2/Resolutionx #gets cm/pixel at that distance, have to multiply in the start to get the full distance of the frame
+
+
+        FOVy = 32.1*math.pi/180 #FOV in degrees determined experimentall, converts FOV in radians
+        thetay = FOVy/2 
+        Resolutiony = self.campixelheight #by default 480
+        objectplaney = dist*math.tan(thetay)
+        mapy = objectplaney*2/Resolutiony #gets cm/pixel at that distance
+
+        for (x,y) in eyecentres:
+            eyedist.append([mapx*x, mapy*y])
+        try:
+            diffx = abs(eyedist[0][0] - eyedist[1][0])
+            diffy = abs(eyedist[0][1] - eyedist[1][1])
+        except IndexError:
+            print("Only 1 eye to clalculate, no difference!")
+            diffx = 0
+            diffy = 0
+        if debug:
+            #print(eyecentres)
+            #print("Eye Maps:\n", mapx, mapy)
+            print("Eye Distances:\n",eyedist)
+            print("X difference:\n", diffx)
+            print("Y difference:\n", diffy)
+        #Mario's way
+        return eyedist
+
 
 #set blob brightness threshold
 p_thresh = 150
@@ -312,19 +561,18 @@ def correctedAngleCalc(pixelX,pixelY):
 
 
 #Set up GLOBAL alpha, phis for use in grid addressing!
-alpha = []
-phi = []
+alpha = [None,None]
+phi = [None,None]
 alpha_other = [None,None] #from other pi
 phi_other = [None,None]
-#Set up GLOBAL driver parameters for use in grid addressing
-dx_read = 0
-dy_read = 0
-dz_read = 0
-
+eye_x = 0
+eye_y = 0
+d_dist = 70
 
 #start objects from other Classes
 vs = PiCamThreaded().start()
 ga = GridAddressing().start()
+ht = HeadTrackingThreaded().start()
 fps = FPS().start()
 
 #warmup
@@ -431,8 +679,8 @@ while True:
         conts = contours.sort_contours(conts)[0]
 
     #reset lists to store alpha,phi for multiple lights.
-    alpha = []
-    phi = []
+    #alpha = []
+    #phi = []
     #loop over the contours
     for(i, c) in enumerate(conts):
         #draw bright spot on the image
@@ -456,8 +704,8 @@ while True:
         #using new angle calc method from calibration!
 
         (temp_alpha,temp_phi) = correctedAngleCalc(FinalX,FinalY)
-        alpha.append(temp_alpha)
-        phi.append(temp_phi)
+        alpha[i] = temp_alpha
+        phi[i] = temp_phi
         
         #print angles for current light
         #print(str(row_blk_left[int(FinalY)]))
@@ -488,8 +736,14 @@ while True:
             flag_array.append(ser.read())
         
         flag_packed = flag_array[0] + flag_array[1]
-        flag_unpacked = struct.unpack('h', flag_packed)
-        flag = int(flag_unpacked[0])
+        if len(flag_packed) == 2:
+            flag_unpacked = struct.unpack('h', flag_packed)
+            flag = int(flag_unpacked[0])
+
+        else:
+            flag = 0 #if there is an error in serial comms, reset the loop
+                     #without doing anything
+
 
         #print('read something: ' + str(flag))
         #print('translated: ' +str(ord(flag)))
