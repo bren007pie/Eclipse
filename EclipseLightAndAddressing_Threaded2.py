@@ -141,14 +141,18 @@ class GridAddressing:
 
             #outputs from Driver Tracking (in cm)
             horizontalDisplacement = eye_x
+            print('hD: ' + str(horizontalDisplacement))
             verticalDisplacement = eye_y
+            print('vD: ' + str(verticalDisplacement))
             depthSensorToDriver = 50 #d_dist
 
             x1 = y1 = x2 = y2 = x3 = y3 = x4 = y4 = None
             
             dDriver = dSensorToWindshield + depthSensorToDriver
             xDriver = xCam1 + horizontalDisplacement
+            print('xDriver: ' + str(xDriver))
             yDriver = yCam2 + verticalDisplacement
+            print('yDriver: ' + str(yDriver))
             
             if type(alpha1) != type(None):
                 xProjection1 = dDriver*math.tan(math.radians(alpha1)) + xDriver
@@ -238,8 +242,7 @@ class GridAddressing:
 
 class HeadTrackingThreaded:
 
-    def __init__(self):
-    
+    def __init__(self):        
         cv2.setNumThreads(0)#restrict opencv functions to one thread
         os.chdir("/usr/local/share/OpenCV/haarcascades/")
         self.face_cascade = cv2.CascadeClassifier('/usr/local/share/OpenCV/haarcascades/haarcascade_frontalface_default.xml')
@@ -268,6 +271,9 @@ class HeadTrackingThreaded:
         return self
 
     def update(self):
+        global eye_x #NEED THESE OTHERWISE IT DONNNT WORK
+        global eye_y
+        
         while True:
             ret, img = self.cap.read() #reads in the image
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) #converts to grayscale
@@ -319,8 +325,8 @@ class HeadTrackingThreaded:
                 
                 eye_x = (eyedist[0][0] + eyedist[1][0])/2
                 eye_y = (eyedist[0][1] + eyedist[1][1])/2
-                print('eye_x: ' + str(eye_x))
-                print('eye_y: ' + str(eye_y))
+                #print('eye_x: ' + str(eye_x))
+                #print('eye_y: ' + str(eye_y))
                 #LOL I changed this
 
                 
@@ -447,15 +453,15 @@ class HeadTrackingThreaded:
             diffx = abs(eyedist[0][0] - eyedist[1][0])
             diffy = abs(eyedist[0][1] - eyedist[1][1])
         except IndexError:
-            print("Only 1 eye to clalculate, no difference!")
+            #print("Only 1 eye to clalculate, no difference!")
             diffx = 0
             diffy = 0
-        if debug:
+        #if debug:
             #print(eyecentres)
             #print("Eye Maps:\n", mapx, mapy)
-            print("Eye Distances:\n",eyedist)
-            print("X difference:\n", diffx)
-            print("Y difference:\n", diffy)
+            #print("Eye Distances:\n",eyedist)
+            #print("X difference:\n", diffx)
+            #print("Y difference:\n", diffy)
         #Mario's way
         return eyedist
 
