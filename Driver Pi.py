@@ -176,6 +176,7 @@ class HeadTrackingThreaded:
 
                     SENDING_DRIVER = True #set this flag to true to interrupt sending light info
                     
+                    time.sleep(0.2)
                     ser.write(struct.pack('h',3)) #start flag for driver location
                     print(str(3))
                     ser.write(struct.pack('h',int(eye_x)))
@@ -392,11 +393,11 @@ def undistort(Xpoint,Ypoint):
 def correctedAngleCalc(pixelX,pixelY):
     pixelXMax = x_res - row_blk_right[pixelY] #in reality the maxes of these will depend on
     pixelYMax = y_res - col_blk_top[pixelX] #the black bars
-    cal_depth = 0.5  #whatever depth it takes in calibration to fill the frame
+    cal_depth = 0.45  #whatever depth it takes in calibration to fill the frame
     cal_width = 1 #ex. width of windshield
-    cal_height = 0.5 #ex. height of windshield
+    cal_height = 0.65 #ex. height of windshield
     alpha = math.degrees(math.atan((cal_width/2)*((pixelX-x_res/2)/(pixelXMax - x_res/2))/cal_depth))
-    phi = math.degrees(math.atan((cal_height/2)*((pixelY-y_res/2)/(pixelYMax - y_res/2))/cal_depth))
+    phi = -math.degrees(math.atan((cal_height/2)*((pixelY-y_res/2)/(pixelYMax - y_res/2))/cal_depth))
     #print(str(alpha))
     #print(str(phi))
     return(alpha,phi)
@@ -522,7 +523,7 @@ while True:
         if not SENDING_DRIVER:
 
             SENDING_LIGHT = True #raise this flag to prevent sending driver info
-
+            time.sleep(0.5)
             ser.write(struct.pack('h',i+1)) #signal light number
             #write the x,y positions of each light to serial
 
