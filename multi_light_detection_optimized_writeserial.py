@@ -28,7 +28,7 @@ class PiCamThreaded:
         self.camera.resolution = resolution
         self.camera.framerate = framerate
         self.camera.exposure_mode = 'off' #'auto'
-        self.camera.shutter_speed = 1000
+        self.camera.shutter_speed = 250
         self.rawCapture = PiRGBArray(self.camera, size = resolution)
         self.stream = self.camera.capture_continuous(self.rawCapture,format = "bgr", use_video_port=True)
        #initialize frame and stopped variables
