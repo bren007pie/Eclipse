@@ -16,27 +16,13 @@ import cv2
 import os
 import RPi.GPIO as GPIO
 import subprocess
-
-##THIS VERSION OF THE INTEGRATED CODE HAS GRID ADDRESSING IN A SEPARATE THREAD, FOR A TOTAL OF 3 THREADS##
+import adafruit_mcp230xx
+import board
+import busio
+import digitalio
 
 
 subprocess.call("./pre_eclipse.sh", shell=True)
-
-#change system path to be able to import sunlight sensor driver
-#sys.path.append('./SunIOT/SDL_Pi_SI1145');
-#import SDL_Pi_SI1145
-
-#define sunlight sensor and function
-#sensor = SDL_Pi_SI1145.SDL_Pi_SI1145()
-#def readSunLight():        
-#	#time.sleep(0.5)
-#	vis = sensor.readVisible()
-#	IR = sensor.readIR()
-#	UV = sensor.readUV()
-#	uvIndex = UV / 100.0 #currently not outputting
-#	return (vis,IR,UV)
-
-
 
 
 #Define threaded Pi Cam class
@@ -47,7 +33,7 @@ class PiCamThreaded:
         self.camera.resolution = resolution
         self.camera.framerate = framerate
         self.camera.exposure_mode = 'off' #'auto'
-        self.camera.shutter_speed = 125#250
+        self.camera.shutter_speed = 250
         #self.camera.iso = 100 #try this low iso
         self.rawCapture = PiRGBArray(self.camera, size = resolution)
         self.stream = self.camera.capture_continuous(self.rawCapture,format = "bgr", use_video_port=True)
@@ -96,14 +82,49 @@ class GridAddressing:
         GPIO.setwarnings(0)
 
         #list of pins to be used as outputs
-        channels = list(range(4,14))+list(range(16,20))
+        channels = list(range(4,14))+list(range(16,18))
         GPIO.setup(channels, GPIO.OUT, initial = 0)
 
-        #list of pins corresponding to row and column voltage control
-        self.bottomRowPins = channels[:7]
-        self.topRowPins = channels[7:]
-            
+        #set up "y-channels", i.e. the rows
+        self.ychannel1 = channels[0:3]
+        self.ychannel2 = channels[3:6]
+        self.ychannel3 = channels[6:9]
+        self.ychannel4 = channels[9:12]
 
+        #necessary initialization for the first column of each quadrant
+        GPIO.output(self.ychannel1[0],1)
+        GPIO.output(self.ychannel2[0],1)
+        GPIO.output(self.ychannel3[0],1)
+        GPIO.output(self.ychannel4[0],1)
+
+        i2c = busio.I2C(board.SCL, board.SDA)
+        mcp1 = adafruit_mcp230xx.MCP23017(i2c, address = 0x20)
+        mcp2 = adafruit_mcp230xx.MCP23017(i2c, address = 0x21)
+        mcp3 = adafruit_mcp230xx.MCP23017(i2c, address = 0x22)
+        mcp4 = adafruit_mcp230xx.MCP23017(i2c, address = 0x23)
+
+        self.quad1 = []
+        self.quad2 = []
+        self.quad3 = []
+        self.quad4 = []
+
+        for i in range(6):
+            self.quad1.append(mcp1.get_pin(i))
+            self.quad2.append(mcp2.get_pin(i))
+            self.quad3.append(mcp3.get_pin(i))
+            self.quad4.append(mcp4.get_pin(i))
+            self.quad1[i].direction = digitalio.Direction.OUTPUT
+            self.quad2[i].direction = digitalio.Direction.OUTPUT
+            self.quad3[i].direction = digitalio.Direction.OUTPUT
+            self.quad4[i].direction = digitalio.Direction.OUTPUT
+
+        for i in range(6): 
+            self.quad1[i].value = 0
+            self.quad2[i].value = 0
+            self.quad3[i].value = 0
+            self.quad4[i].value = 0
+            
+        
     def start(self):
         t = Thread(target = self.update, args=())
         t.daemon = True
@@ -112,7 +133,8 @@ class GridAddressing:
 
     def update(self):
         #global alpha_other
-        prev_x1 = None
+        prev_x = None
+
         while True:
              #constants and variables
             xCam1 = 55
@@ -125,8 +147,8 @@ class GridAddressing:
             if alpha[0]:
                 alpha1 = alpha[0]#alpha_other[0] #-10
                 phi1 = -15+ phi[0]#phi[0] #-15#
-                alpha2 = alpha[1]#None#60
-                phi2 = phi[1]#None #0
+                alpha2 = None #alpha[1]#None#60
+                phi2 = None #phi[1]#None #0
             else:
                 alpha1 = None
                 phi1 = None
@@ -141,91 +163,87 @@ class GridAddressing:
             verticalDisplacement = -eye_y
             print('vD: ' + str(verticalDisplacement))
             depthSensorToDriver = d_dist
-
-            x1 = y1 = x2 = y2 = x3 = y3 = x4 = y4 = None
-            
+         
             dDriver = dSensorToWindshield + depthSensorToDriver
             xDriver = xCam1 + horizontalDisplacement
             #print('xDriver: ' + str(xDriver))
             yDriver = yCam2 + verticalDisplacement
             #print('yDriver: ' + str(yDriver))
-            
+
             if type(alpha1) != type(None):
                 xProjection1 = dDriver*math.tan(math.radians(alpha1)) + xDriver
                 yProjection1 = dDriver*math.tan(math.radians(phi1)) + yDriver
                 
-                column1 = int(xProjection1/20)
-                row1 = int(yProjection1/20)
+                x = int(xProjection1/10)
+                y = int(yProjection1/10)
+            
+                try:
+                    if x != prev_x or y !=prev_y:
+                        for i in range(6): 
+                            self.quad1[i].value = 0
+                            self.quad2[i].value = 0
+                            self.quad3[i].value = 0
+                            self.quad4[i].value = 0
+                        #assuming no error catching is necessary because x and y are
+                        #carefully prepared in another part of the code
+                        if x >= 0 and x < 6:
+                            if y >= 0 and y < 3:
+                                #for i in range(6): #range of 6 (0,1,2,3,4,5) should be enough?
+                                #    self.quad1[i].value = 0
+                                GPIO.output(self.ychannel1[y],1)
+                                for i in range(3):
+                                    if i != y:
+                                        GPIO.output(self.ychannel1[i],0)
+                                self.quad1[x].value = 1
+                                print('done did it!!!')
+
+                            elif y >= 3 and y < 6:
+                                #for i in range(6): 
+                                #    self.quad2[i].value = 0
+                                GPIO.output(self.ychannel2[y-3],1)
+                                for i in range(3):
+                                    if i+3 != y:
+                                        GPIO.output(self.ychannel2[i],0) #check with Stevie
+                                self.quad2[x].value = 1
+                                print('yah y33t')
+
+                        elif x >= 6 and x < 12:
+                            if y >= 0 and y < 3:
+                                #for i in range(6): #range of 6 (0,1,2,3,4,5) should be enough?
+                                #    self.quad3[i].value = 0 
+                                GPIO.output(self.ychannel3[y],1)
+                                for i in range(3):
+                                    if i != y:
+                                        GPIO.output(self.ychannel3[i],0)
+                                self.quad3[x-6].value = 1
+                                print('flicka da wrist boi')
+
+                            elif y >= 3 and y < 6:
+                                #for i in range(6): #range of 6 (0,1,2,3) should be enough?
+                                #    self.quad4[i].value = 0
+                                GPIO.output(self.ychannel4[y-3],1)
+                                for i in range(3):
+                                    if i+3 != y:
+                                        GPIO.output(self.ychannel4[i],0)
+                                self.quad4[x-6].value = 1
+                                print('do whatcha daddy did')
+
+                    else:
+                        print('same tile as before!')
+                            
+                except KeyboardInterrupt:
+                    GPIO.cleanup()
+
+                #save the most recent value of x1 before it changes
+                prev_x = x
+                prev_y = y
                 
-                if (column1 >= 0 and column1 < 7) and (row1 == 1 or row1 == 2):
-                    #print("blah1")
-                    x1 = column1
-                    y1 = row1
-                
-                if type(alpha2) != type(None):
-                    xProjection2 = dDriver*math.tan(math.radians(alpha2)) + xDriver
-                    yProjection2 = dDriver*math.tan(math.radians(phi2)) + yDriver
-                    
-                    column2 = int(xProjection2/20)
-                    row2 = int(yProjection2/20)
-                    
-                    if (column2 >= 0 and column2 < 7) and (row2 == 1 or row2 == 2):
-                        #print("blah2")
-                        x2 = column2
-                        y2 = row2
-                     
-            #begin actual grid addressing
-            if type(x1) != type(None):
-                if y1 == 1:
-                    GPIO.output(self.bottomRowPins[x1],1)
-                    
-                    if prev_x1 != x1 and type(prev_x1) != type(None):
-                        GPIO.output(self.bottomRowPins[prev_x1],0)
-                    if prev_y1 != y1 and type(prev_y1) != type(None):
-                        GPIO.output(self.topRowPins[prev_x1],0)
-                        
-                elif y1 == 2:
-                    GPIO.output(self.topRowPins[x1],1)
-                    
-                    if prev_x1 != x1 and type(prev_x1) != type(None):
-                        GPIO.output(self.topRowPins[prev_x1],0)
-                    if prev_y1 != y1 and type(prev_y1) != type(None):
-                        GPIO.output(self.bottomRowPins[prev_x1],0)
-                        
-                    
-                if type(x2) != type(None): #second light!
-                    if y2 == 1:
-                        GPIO.output(self.bottomRowPins[x2],1)
-
-                        if prev_x2 != x2 and type(prev_x2) != type(None):
-                            GPIO.output(self.bottomRowPins[prev_x2],0)
-                        if prev_y2 != y2 and type(prev_y2) != type(None):
-                            GPIO.output(self.topRowPins[prev_y2],0)
-                      
-                    elif y2 == 2:
-                        GPIO.output(self.topRowPins[x2],1)
-
-                        if prev_x2 != x2 and type(prev_x2) != type(None):
-                            GPIO.output(self.topRowPins[prev_x2],0)
-                        if prev_y2 != y2 and type(prev_y2) != type(None):
-                            GPIO.output(self.bottomRowPins[prev_y2],0)
-
-                #else:
-                #    print('ha ha')
-                #    if y2 == 1:
-                #        GPIO.output(self.bottomRowPins[prev_x2],0)
-                #    elif y2 == 2:
-                #        GPIO.output(self.topRowPins[prev_x2],0)
-                    
             else:
-                GPIO.output(self.bottomRowPins,0)
-                GPIO.output(self.topRowPins,0)
-
-            #save the most recent value of x1 before it changes
-            prev_x1 = x1
-            prev_y1 = y1
-            prev_x2 = x2
-            prev_y2 = y2   
+                for i in range(6): 
+                    self.quad1[i].value = 0
+                    self.quad2[i].value = 0
+                    self.quad3[i].value = 0
+                    self.quad4[i].value = 0
             
         return
 

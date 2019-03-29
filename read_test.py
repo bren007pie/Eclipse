@@ -13,12 +13,12 @@ ser = serial.Serial(
     )
 
 
-#while True:
-    #read ints of x,y, coordinates from other pi
-#    x = ser.read()
-#    print(x)
-    #print(ord(x))
-        
+##while True:
+##    #read ints of x,y, coordinates from other pi
+##    x = ser.read()
+##    print(x)
+##    print(ord(x))
+##        
     
 
 while True:
@@ -36,8 +36,9 @@ while True:
         print(x_array[i])
         
     x_packed = x_array[0] + x_array[1]
-    x_unpacked = struct.unpack('h',x_packed)
-    x = x_unpacked[0]
-    print(x)
+    if len(x_packed) == 2:
+        x_unpacked = struct.unpack('h',x_packed)
+        x = x_unpacked[0]
+        print(x)
         
  
